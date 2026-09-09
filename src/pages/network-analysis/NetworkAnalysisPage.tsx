@@ -190,7 +190,7 @@ export function NetworkAnalysisPage() {
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
-        <Card padded={false} bodyClassName="p-3 flex flex-col gap-3 min-h-[300px]" className="min-h-0">
+        <Card padded={false} bodyClassName="p-3 flex flex-col gap-3 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "overview" && (
             <>
               <div className="grid grid-cols-3 gap-2.5">
@@ -198,30 +198,30 @@ export function NetworkAnalysisPage() {
                 <StatCard icon={File} label="Files" value={formatNumber(networkScanSummary.files)} tone="info" />
                 <StatCard icon={Folder} label="Folders" value={formatNumber(networkScanSummary.folders)} tone="info" />
               </div>
-              <DonutChart data={networkFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(networkScanSummary.totalBytes)} size={160} />
+              <DonutChart data={networkFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(networkScanSummary.totalBytes)} size={112} />
             </>
           )}
           {tab === "shares" && (
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                  <th className="py-2">Share Name</th>
-                  <th className="py-2">Path</th>
-                  <th className="py-2 text-right">Total Size</th>
-                  <th className="py-2 text-right">Free Space</th>
-                  <th className="py-2">File System</th>
-                  <th className="py-2">Status</th>
+                  <th className="px-3 py-2">Share Name</th>
+                  <th className="px-3 py-2">Path</th>
+                  <th className="px-3 py-2 text-right">Total Size</th>
+                  <th className="px-3 py-2 text-right">Free Space</th>
+                  <th className="px-3 py-2">File System</th>
+                  <th className="px-3 py-2">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {networkShares.map((s) => (
                   <tr key={s.name} className="border-b border-border/60 hover:bg-surface-hover">
-                    <td className="py-2 font-medium text-fg">{s.name}</td>
-                    <td className="py-2 text-fg-muted">{s.path}</td>
-                    <td className="py-2 text-right text-fg-muted">{formatBytes(s.totalBytes)}</td>
-                    <td className="py-2 text-right text-fg-muted">{formatBytes(s.freeBytes)}</td>
-                    <td className="py-2 text-fg-muted">{s.fileSystem}</td>
-                    <td className="py-2">
+                    <td className="px-3 py-2 font-medium text-fg">{s.name}</td>
+                    <td className="px-3 py-2 text-fg-muted">{s.path}</td>
+                    <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(s.totalBytes)}</td>
+                    <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(s.freeBytes)}</td>
+                    <td className="px-3 py-2 text-fg-muted">{s.fileSystem}</td>
+                    <td className="px-3 py-2">
                       <Badge tone={shareStatusTone[s.status]} dot>
                         {s.status}
                       </Badge>
@@ -274,26 +274,26 @@ export function NetworkAnalysisPage() {
           )}
           {tab === "file-types" && (
             <div className="flex h-full items-center justify-center">
-              <DonutChart data={networkFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(networkScanSummary.totalBytes)} size={220} />
+              <DonutChart data={networkFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(networkScanSummary.totalBytes)} size={180} />
             </div>
           )}
           {tab === "access-rights" && (
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                  <th className="py-2">Type</th>
-                  <th className="py-2">Name</th>
-                  <th className="py-2">Permissions</th>
-                  <th className="py-2">Inherited</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Name</th>
+                  <th className="px-3 py-2">Permissions</th>
+                  <th className="px-3 py-2">Inherited</th>
                 </tr>
               </thead>
               <tbody>
                 {accessRights.map((a) => (
                   <tr key={a.name} className="border-b border-border/60">
-                    <td className="py-2 text-fg-muted">{a.type}</td>
-                    <td className="py-2 text-fg">{a.name}</td>
-                    <td className="py-2 text-fg-muted">{a.permissions}</td>
-                    <td className="py-2 text-fg-muted">{a.inherited ? "Yes" : "No"}</td>
+                    <td className="px-3 py-2 text-fg-muted">{a.type}</td>
+                    <td className="px-3 py-2 text-fg">{a.name}</td>
+                    <td className="px-3 py-2 text-fg-muted">{a.permissions}</td>
+                    <td className="px-3 py-2 text-fg-muted">{a.inherited ? "Yes" : "No"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -303,19 +303,19 @@ export function NetworkAnalysisPage() {
             <table className="w-full text-[12.5px]">
               <thead>
                 <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                  <th className="py-2">User</th>
-                  <th className="py-2">Host</th>
-                  <th className="py-2">Connected Since</th>
-                  <th className="py-2 text-right">Open Files</th>
+                  <th className="px-3 py-2">User</th>
+                  <th className="px-3 py-2">Host</th>
+                  <th className="px-3 py-2">Connected Since</th>
+                  <th className="px-3 py-2 text-right">Open Files</th>
                 </tr>
               </thead>
               <tbody>
                 {networkSessions.map((s) => (
                   <tr key={s.host} className="border-b border-border/60">
-                    <td className="py-2 text-fg">{s.user}</td>
-                    <td className="py-2 text-fg-muted">{s.host}</td>
-                    <td className="py-2 text-fg-muted">{formatDate(s.connectedSince)}</td>
-                    <td className="py-2 text-right text-fg-muted">{s.openFiles}</td>
+                    <td className="px-3 py-2 text-fg">{s.user}</td>
+                    <td className="px-3 py-2 text-fg-muted">{s.host}</td>
+                    <td className="px-3 py-2 text-fg-muted">{formatDate(s.connectedSince)}</td>
+                    <td className="px-3 py-2 text-right text-fg-muted">{s.openFiles}</td>
                   </tr>
                 ))}
               </tbody>
@@ -323,7 +323,7 @@ export function NetworkAnalysisPage() {
           )}
         </Card>
 
-        <div className="flex flex-col gap-3 overflow-y-auto">
+        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
           <Card title="Network Throughput" action={<span className="text-[11px] text-fg-muted">Current: {throughput[throughput.length - 1]?.mbps} Mbit/s</span>}>
             <LineChartPanel
               data={throughput}

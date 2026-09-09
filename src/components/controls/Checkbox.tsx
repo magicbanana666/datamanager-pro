@@ -15,7 +15,7 @@ export function Checkbox({ checked, indeterminate, onChange, label, disabled, cl
   return (
     <label
       className={clsx(
-        "inline-flex items-center gap-2 select-none",
+        "flex min-w-0 items-center gap-2 select-none",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
         className,
       )}
@@ -44,7 +44,7 @@ export function Checkbox({ checked, indeterminate, onChange, label, disabled, cl
           <Check size={11} strokeWidth={3} className="text-fg-on-accent" />
         ) : null}
       </span>
-      {label && <span className="text-[13px] text-fg">{label}</span>}
+      {label && <span className="min-w-0 text-[13px] text-fg">{label}</span>}
     </label>
   );
 }

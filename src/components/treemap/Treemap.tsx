@@ -29,7 +29,7 @@ export function Treemap({ node, selectedId, onSelect, onDrillDown, className }: 
   }, [node, size.width, size.height]);
 
   return (
-    <div ref={ref} className={clsx("relative h-full w-full min-h-[200px]", className)}>
+    <div ref={ref} className={clsx("relative h-full w-full min-h-0", className)}>
       {rects.length === 0 && (
         <div className="flex h-full items-center justify-center text-xs text-fg-subtle">No data to display</div>
       )}

@@ -11,7 +11,7 @@ export function Toggle({ checked, onChange, label, disabled }: ToggleProps) {
   return (
     <label
       className={clsx(
-        "inline-flex items-center gap-2.5 select-none",
+        "flex min-w-0 items-center gap-2.5 select-none",
         disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
       )}
     >
@@ -38,7 +38,7 @@ export function Toggle({ checked, onChange, label, disabled }: ToggleProps) {
           )}
         />
       </span>
-      {label && <span className="text-[13px] text-fg">{label}</span>}
+      {label && <span className="min-w-0 text-[13px] text-fg">{label}</span>}
     </label>
   );
 }

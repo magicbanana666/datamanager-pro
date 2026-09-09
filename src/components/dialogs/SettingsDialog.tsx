@@ -40,7 +40,7 @@ export function SettingsDialog() {
       open={settingsOpen}
       onClose={closeSettings}
       title="Settings"
-      width={620}
+      width={720}
       footer={
         <>
           <Button

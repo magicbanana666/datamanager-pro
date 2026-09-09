@@ -24,14 +24,14 @@ export function RadioGroup<T extends string>({
   disabled,
 }: RadioGroupProps<T>) {
   return (
-    <div className={clsx("flex gap-2.5", direction === "vertical" ? "flex-col" : "flex-row flex-wrap items-center")}>
+    <div className={clsx("flex min-w-0 gap-2.5", direction === "vertical" ? "flex-col" : "flex-row flex-wrap items-center")}>
       {options.map((opt) => {
         const checked = opt.value === value;
         return (
           <label
             key={opt.value}
             className={clsx(
-              "inline-flex items-start gap-2 select-none",
+              "flex min-w-0 items-start gap-2 select-none",
               disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer",
             )}
           >
@@ -51,7 +51,7 @@ export function RadioGroup<T extends string>({
             >
               {checked && <span className="h-[7px] w-[7px] rounded-full bg-accent" />}
             </span>
-            <span className="leading-tight">
+            <span className="min-w-0 leading-tight">
               <span className="block text-[13px] text-fg">{opt.label}</span>
               {opt.description && <span className="block text-xs text-fg-muted">{opt.description}</span>}
             </span>

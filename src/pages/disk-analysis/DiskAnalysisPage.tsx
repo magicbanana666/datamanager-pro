@@ -192,7 +192,7 @@ export function DiskAnalysisPage() {
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
-        <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-[360px]" className="min-h-0">
+        <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "treemap" && (
             <>
               <Breadcrumb segments={breadcrumb.map((n) => ({ id: n.id, label: n.name }))} onNavigate={navigateBreadcrumb} />
@@ -209,7 +209,7 @@ export function DiskAnalysisPage() {
           )}
           {tab === "file-types" && (
             <div className="flex h-full items-center justify-center">
-              <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={220} />
+              <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={180} />
             </div>
           )}
           {tab === "top-files" && (
@@ -252,22 +252,22 @@ export function DiskAnalysisPage() {
               <table className="w-full text-[12.5px]">
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                    <th className="py-2">Extension</th>
-                    <th className="py-2 text-right">Files</th>
-                    <th className="py-2 text-right">Size</th>
-                    <th className="py-2 text-right">% of Total</th>
+                    <th className="px-3 py-2">Extension</th>
+                    <th className="px-3 py-2 text-right">Files</th>
+                    <th className="px-3 py-2 text-right">Size</th>
+                    <th className="px-3 py-2 text-right">% of Total</th>
                   </tr>
                 </thead>
                 <tbody>
                   {diskExtensions.map((e, i) => (
                     <tr key={e.extension} className="border-b border-border/60">
-                      <td className="flex items-center gap-2 py-2">
+                      <td className="flex items-center gap-2 px-3 py-2">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: chartColor(i) }} />
                         {e.extension}
                       </td>
-                      <td className="py-2 text-right text-fg-muted">{formatNumber(e.files)}</td>
-                      <td className="py-2 text-right text-fg-muted">{formatBytes(e.size)}</td>
-                      <td className="py-2 text-right text-fg-muted">{formatPercent(e.percent)}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatNumber(e.files)}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(e.size)}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatPercent(e.percent)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -279,19 +279,19 @@ export function DiskAnalysisPage() {
               <table className="w-full text-[12.5px]">
                 <thead>
                   <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                    <th className="py-2">Owner</th>
-                    <th className="py-2 text-right">Files</th>
-                    <th className="py-2 text-right">Size</th>
-                    <th className="py-2 text-right">%</th>
+                    <th className="px-3 py-2">Owner</th>
+                    <th className="px-3 py-2 text-right">Files</th>
+                    <th className="px-3 py-2 text-right">Size</th>
+                    <th className="px-3 py-2 text-right">%</th>
                   </tr>
                 </thead>
                 <tbody>
                   {diskOwners.map((o) => (
                     <tr key={o.user} className="border-b border-border/60">
-                      <td className="py-2">{o.user}</td>
-                      <td className="py-2 text-right text-fg-muted">{formatNumber(o.files)}</td>
-                      <td className="py-2 text-right text-fg-muted">{formatBytes(o.size)}</td>
-                      <td className="py-2 text-right text-fg-muted">{formatPercent(o.percent)}</td>
+                      <td className="px-3 py-2">{o.user}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatNumber(o.files)}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(o.size)}</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatPercent(o.percent)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -300,7 +300,7 @@ export function DiskAnalysisPage() {
           )}
         </Card>
 
-        <div className="flex flex-col gap-3 overflow-y-auto">
+        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
           <Card title="Drive Usage">
             <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={130} />
           </Card>

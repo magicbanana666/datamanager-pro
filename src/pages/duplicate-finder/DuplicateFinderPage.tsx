@@ -160,12 +160,12 @@ export function DuplicateFinderPage() {
             <table className="w-full text-[12.5px]">
               <thead className="sticky top-0 bg-surface-alt">
                 <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                  <th className="w-8 py-2" />
-                  <th className="py-2">Name / Group</th>
-                  <th className="py-2">Path</th>
-                  <th className="py-2 text-right">Size</th>
-                  <th className="py-2">Type</th>
-                  <th className="py-2">Modified</th>
+                  <th className="w-8 py-2 pl-2.5" />
+                  <th className="px-3 py-2">Name / Group</th>
+                  <th className="px-3 py-2">Path</th>
+                  <th className="px-3 py-2 text-right">Size</th>
+                  <th className="px-3 py-2">Type</th>
+                  <th className="px-3 py-2">Modified</th>
                 </tr>
               </thead>
               <tbody>
@@ -179,12 +179,12 @@ export function DuplicateFinderPage() {
                       <td className="py-2 pl-2.5 text-fg-muted">
                         {g.expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
                       </td>
-                      <td className="py-2 font-semibold text-fg" colSpan={2}>
+                      <td className="px-3 py-2 font-semibold text-fg" colSpan={2}>
                         Group: {g.label} ({g.files.length} files)
                       </td>
-                      <td className="py-2 text-right text-fg-muted">{formatBytes(g.size)}</td>
-                      <td className="py-2 text-fg-muted">{g.type}</td>
-                      <td className="py-2 text-fg-muted">{g.files.length} dup.</td>
+                      <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(g.size)}</td>
+                      <td className="px-3 py-2 text-fg-muted">{g.type}</td>
+                      <td className="px-3 py-2 text-fg-muted">{g.files.length} dup.</td>
                     </tr>
                     {g.expanded &&
                       g.files.map((f) => (
@@ -199,13 +199,13 @@ export function DuplicateFinderPage() {
                           <td className="py-1.5 pl-4">
                             <Checkbox checked={f.selected} onChange={() => toggleFile(g.id, f.id)} disabled={f.isOriginal} />
                           </td>
-                          <td className="py-1.5 pl-2 text-fg">
+                          <td className="px-3 py-1.5 text-fg">
                             {f.name} {f.isOriginal && <span className="ml-1 text-[10px] text-success">(original)</span>}
                           </td>
-                          <td className="py-1.5 text-fg-muted">{f.path}</td>
-                          <td className="py-1.5 text-right text-fg-muted">{formatBytes(f.size)}</td>
-                          <td className="py-1.5 text-fg-muted">{f.type}</td>
-                          <td className="py-1.5 text-fg-muted">{formatDate(f.modified)}</td>
+                          <td className="px-3 py-1.5 text-fg-muted">{f.path}</td>
+                          <td className="px-3 py-1.5 text-right text-fg-muted">{formatBytes(f.size)}</td>
+                          <td className="px-3 py-1.5 text-fg-muted">{f.type}</td>
+                          <td className="px-3 py-1.5 text-fg-muted">{formatDate(f.modified)}</td>
                         </tr>
                       ))}
                   </Fragment>
@@ -228,7 +228,7 @@ export function DuplicateFinderPage() {
           )}
         </Card>
 
-        <div className="flex flex-col gap-3 overflow-y-auto">
+        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
           <Card title="Preview" bodyClassName="flex flex-col items-center gap-2 p-3">
             <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border-strong bg-surface-alt">
               <ImageIcon size={28} className="text-fg-subtle" />

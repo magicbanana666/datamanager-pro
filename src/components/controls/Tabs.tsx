@@ -36,8 +36,8 @@ export function Tabs({ tabs, active, onChange, className }: TabsProps) {
             {tab.badge !== undefined && (
               <span
                 className={clsx(
-                  "rounded-full px-1.5 text-[11px]",
-                  isActive ? "bg-white/20" : "bg-surface-hover text-fg-subtle",
+                  "rounded-full px-1.5 py-[1px] text-[11px] font-semibold",
+                  isActive ? "bg-white/25 text-fg-on-accent" : "bg-border-strong text-fg-muted",
                 )}
               >
                 {tab.badge}

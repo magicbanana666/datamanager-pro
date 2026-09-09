@@ -162,7 +162,7 @@ export function FolderAnalysisPage() {
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
-        <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-[360px]" className="min-h-0">
+        <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "treemap" && (
             <>
               <Breadcrumb segments={breadcrumb.map((n) => ({ id: n.id, label: n.name }))} onNavigate={navigateBreadcrumb} />
@@ -179,7 +179,7 @@ export function FolderAnalysisPage() {
           )}
           {tab === "file-types" && (
             <div className="flex h-full items-center justify-center">
-              <DonutChart data={folderFileTypeStats} centerLabel="Selected Folder" centerValue={formatBytes(currentNode.size)} size={220} />
+              <DonutChart data={folderFileTypeStats} centerLabel="Selected Folder" centerValue={formatBytes(currentNode.size)} size={180} />
             </div>
           )}
           {tab === "top-files" && (
@@ -237,7 +237,7 @@ export function FolderAnalysisPage() {
           )}
         </Card>
 
-        <div className="flex flex-col gap-3 overflow-y-auto">
+        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
           <FolderDetailsCard node={selectedNode ?? currentNode} />
           <Card title="Size Distribution">
             <DonutChart data={folderSizeDistribution} centerLabel="Distribution" centerValue={formatBytes(currentNode.size)} size={120} />

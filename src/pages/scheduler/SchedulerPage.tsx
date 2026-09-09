@@ -79,7 +79,7 @@ export function SchedulerPage() {
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_320px] gap-3">
-        <div className="flex min-h-0 flex-col gap-3">
+        <div className="flex min-h-0 min-w-0 flex-col gap-3">
           <Card padded={false} bodyClassName="h-[240px]">
             <DataTable
               columns={columns}
