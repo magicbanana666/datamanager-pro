@@ -1,0 +1,138 @@
+@import "tailwindcss";
+
+/*
+  DataManager Pro design tokens.
+  Dark-mode-only, professional Windows-admin-tool aesthetic.
+  Swap these values to re-theme the whole app.
+*/
+@theme {
+  --font-sans: "Segoe UI", "Segoe UI Variable", ui-sans-serif, system-ui, -apple-system, Arial, sans-serif;
+  --font-mono: "Cascadia Mono", "Consolas", ui-monospace, SFMono-Regular, monospace;
+
+  /* Surfaces */
+  --color-canvas: #0a0e16;
+  --color-canvas-alt: #0d1320;
+  --color-surface: #121a28;
+  --color-surface-alt: #16202f;
+  --color-surface-hover: #1b2636;
+  --color-surface-selected: #1e3a63;
+  --color-overlay: rgba(4, 6, 10, 0.72);
+
+  /* Borders */
+  --color-border: #212c3c;
+  --color-border-strong: #2c3a4d;
+
+  /* Accent + status */
+  --color-accent: #3b82f6;
+  --color-accent-hover: #2f6fe0;
+  --color-accent-soft: #1c3a63;
+  --color-success: #22c55e;
+  --color-success-soft: #14351f;
+  --color-warning: #f59e0b;
+  --color-warning-soft: #3a2a0d;
+  --color-danger: #ef4444;
+  --color-danger-soft: #3a1a1a;
+  --color-info: #38bdf8;
+
+  /* Text */
+  --color-fg: #e7ecf3;
+  --color-fg-muted: #8b96a8;
+  --color-fg-subtle: #5c6576;
+  --color-fg-on-accent: #f5f8ff;
+
+  /* Chart categorical palette */
+  --color-chart-1: #3b82f6;
+  --color-chart-2: #f97316;
+  --color-chart-3: #22c55e;
+  --color-chart-4: #ef4444;
+  --color-chart-5: #a855f7;
+  --color-chart-6: #eab308;
+  --color-chart-7: #64748b;
+  --color-chart-8: #14b8a6;
+  --color-chart-9: #ec4899;
+  --color-chart-10: #84cc16;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+}
+
+:root {
+  color-scheme: dark;
+  --row-h: 34px;
+  --density-pad-x: 10px;
+  --density-pad-y: 7px;
+}
+
+:root[data-density="compact"] {
+  --row-h: 26px;
+  --density-pad-x: 8px;
+  --density-pad-y: 4px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* Thin, unobtrusive scrollbars for a native desktop feel */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--color-border-strong);
+  border-radius: 6px;
+  border: 2px solid transparent;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--color-fg-subtle);
+}
+
+input,
+select,
+textarea,
+button {
+  font-family: inherit;
+  color: inherit;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Utility: highlighted search term markers */
+mark.search-hit {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+  border-radius: 2px;
+  padding: 0 1px;
+}
