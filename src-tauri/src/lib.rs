@@ -1,14 +1,15 @@
 //! DataManager Pro - Tauri backend entry point.
 //!
-//! **Phase 2 status: read-only.** This crate can enumerate storage
-//! volumes, browse folders, and read file/folder metadata - see
-//! `commands::filesystem` and `commands::storage`. It cannot yet
-//! create, delete, rename, move, copy, or write to anything; the
-//! recursive high-performance scanner, transfer engine, sync engine,
-//! network/port scanning and scheduler execution are later phases (see
-//! `commands::network`, `commands::scheduler`, `commands::transfer` for
-//! their still-empty placeholder modules, and PHASE2.md /
-//! ROADMAP.md for details).
+//! **Phase 3 status: read-only, now with a real recursive scanner.**
+//! This crate can enumerate storage volumes, browse folders, read
+//! file/folder metadata, and run a real, cancellable, multithreaded
+//! (or best-effort MFT) recursive scan - see `commands::filesystem`,
+//! `commands::storage` and `commands::scan`. It still cannot create,
+//! delete, rename, move, copy, or write to anything; the transfer
+//! engine, sync engine, network/port scanning and scheduler execution
+//! are later phases (see `commands::network`, `commands::scheduler`,
+//! `commands::transfer` for their still-empty placeholder modules, and
+//! PHASE2.md / PHASE3.md / ROADMAP.md for details).
 
 mod commands;
 mod models;
@@ -19,6 +20,7 @@ mod utils;
 use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
+use commands::scan::{cancel_scan, start_scan, ScanRegistry};
 use commands::storage::list_storage_volumes;
 use commands::system::{get_app_version, get_system_info, ping_backend};
 
@@ -37,6 +39,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(ScanRegistry::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             get_system_info,
@@ -47,6 +50,8 @@ pub fn run() {
             get_directory_summary,
             get_file_metadata,
             get_folder_metadata,
+            start_scan,
+            cancel_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,10 +3,18 @@
 //! (`GetVolumeInformationW`, `GetDriveTypeW`), free/total space
 //! (`GetDiskFreeSpaceExW`), and on-disk allocation size
 //! (`GetCompressedFileSizeW` + cluster rounding via `GetDiskFreeSpaceW`).
+//! `mft` (Phase 3) adds best-effort raw-MFT scanning via the `ntfs`
+//! crate - kept in its own submodule since it's a different kind of
+//! Windows-specific code (a raw volume parser, not a handful of Win32
+//! calls) but re-exported from here so `platform::current` stays one
+//! flat surface.
 //!
 //! Everything here is read-only: every Win32 call used is a query, never
 //! a mutation. Kept isolated in this module (per the Phase 2 brief) so
 //! the rest of the crate never touches `windows::Win32` directly.
+
+mod mft;
+pub use mft::try_mft_scan;
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::FileAttribute;
