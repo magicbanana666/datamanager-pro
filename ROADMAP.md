@@ -1,17 +1,24 @@
 # Roadmap
 
-Phase 1 is UI-only (see [PHASE1.md](./PHASE1.md)). The phases below are
-suggested milestones for turning that UI into a fully functional
-application. Each phase should keep the existing page/component
-structure intact and simply swap mock data sources for real ones behind
-the same interfaces (`src/models/*.ts` on the frontend,
-`src-tauri/src/models/*.rs` on the backend).
+**Phase 1 — Complete** (UI-only, see [PHASE1.md](./PHASE1.md)).
+**Phase 2 — Complete** (real, read-only filesystem layer, see
+[PHASE2.md](./PHASE2.md)). The phases below are suggested milestones
+for turning the rest of the UI into a fully functional application.
+Each phase should keep the existing page/component structure intact
+and simply swap mock data sources for real ones behind the same
+interfaces (`src/models/*.ts` on the frontend, `src-tauri/src/models/*.rs`
+on the backend).
 
-### Phase 2 — Real filesystem abstraction & drive enumeration
-Rust commands to enumerate real drives/volumes (letter, label, total/
-used/free bytes, file system) and browse folders, replacing
-`src/mock/drives.ts`. Introduce a real native folder-picker dialog
-(`@tauri-apps/plugin-dialog`) behind every "Browse..." button.
+### ~~Phase 2 — Real filesystem abstraction & drive enumeration~~ ✅ Complete
+Rust commands enumerate real drives/volumes (letter, label, total/
+used/free bytes, file system) and browse folders read-only, replacing
+`src/mock/drives.ts` for that purpose. A real native folder-picker
+dialog (`@tauri-apps/plugin-dialog`) is wired behind every "Browse..."
+button. Path validation, non-recursive directory listing, and
+shallow folder/file metadata are also real. See
+[PHASE2.md](./PHASE2.md) for the full detail; the analytical layers
+(treemaps, charts, duplicates, etc.) remain mock data going into
+Phase 3.
 
 ### Phase 3 — High-speed folder/disk scanner
 A multithreaded Rust scanning engine (MFT-based on NTFS where possible,
@@ -44,7 +51,9 @@ detection or the two-way sync change tracker.
 Real SMB share browsing/scanning (replacing `src/mock/network.ts`) and
 a real, consent-gated IP/port scanner (replacing `src/mock/portscan.ts`)
 using async TCP connect scans - always behind explicit user action and
-scoped to networks the user has permission to scan.
+scoped to networks the user has permission to scan. Phase 2 already
+validates UNC path syntax/reachability via `validate_path`; this phase
+adds actual SMB share discovery and LAN host enumeration on top of that.
 
 ### Phase 9 — Scheduler & reporting
 A real scheduler (either an internal cron-like runner or genuine

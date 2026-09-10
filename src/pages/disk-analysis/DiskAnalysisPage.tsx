@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { File, Folder, ScanSearch, SlidersHorizontal } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -7,6 +7,8 @@ import { LocationPicker } from "@/components/controls/LocationPicker";
 import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
+import { DemoBadge } from "@/components/controls/DemoBadge";
+import { VolumeSelector } from "@/components/filesystem/VolumeSelector";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { BarChartPanel } from "@/components/charts/BarChartPanel";
@@ -14,15 +16,16 @@ import { Treemap } from "@/components/treemap/Treemap";
 import { Breadcrumb } from "@/components/treemap/Breadcrumb";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { FolderDetailsCard } from "@/components/cards/FolderDetailsCard";
-import { drives } from "@/mock/drives";
 import { diskTree } from "@/mock/folderTree";
 import { diskFileTypeStats, diskLargestFiles, diskTopFolders } from "@/mock/fileTypes";
 import { diskExtensions, diskOwners, diskTimeline } from "@/mock/analysisExtra";
 import { QUICK_FILTERS, filterChildren, withChildren, type QuickFilterId } from "@/utils/fsFilters";
 import { flattenVisible } from "@/utils/fsTree";
 import type { FsNode } from "@/models/common";
+import type { StorageVolume } from "@/models/backend";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
 import { useSimulatedProgress } from "@/hooks/useSimulatedProgress";
+import { useFilesystemStore } from "@/state/filesystemStore";
 import { useUiStore } from "@/state/uiStore";
 import { toast } from "@/state/toastStore";
 import { chartColor } from "@/utils/colors";
@@ -38,9 +41,9 @@ const TABS = [
   { id: "users", label: "Users" },
 ];
 
-const driveD = drives.find((d) => d.letter === "D:")!;
-
 export function DiskAnalysisPage() {
+  const { volumes, volumesLoading, volumesError, loadVolumes } = useFilesystemStore();
+  const [selectedVolume, setSelectedVolume] = useState<StorageVolume | null>(null);
   const [location, setLocation] = useState("D:\\Data");
   const [tab, setTab] = useState("treemap");
   const [quickFilter, setQuickFilter] = useState<QuickFilterId>("all");
@@ -54,6 +57,24 @@ export function DiskAnalysisPage() {
     scanInBackground: false,
   });
   const setStatusText = useUiStore((s) => s.setStatusText);
+
+  useEffect(() => {
+    void loadVolumes();
+    // Volumes only need to be enumerated once when the page mounts;
+    // the Refresh button in VolumeSelector handles re-enumeration.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Derived rather than effect-driven: once volumes load, fall back to
+  // the first fixed volume for display without needing a setState pass.
+  // Explicitly picking a volume (below) still updates real state, since
+  // that's a genuine user action tied to the location field.
+  const displayVolume = selectedVolume ?? volumes.find((v) => v.volumeType === "fixed") ?? volumes[0] ?? null;
+
+  function selectVolume(volume: StorageVolume) {
+    setSelectedVolume(volume);
+    setLocation(volume.mountPoint);
+  }
 
   const scan = useSimulatedProgress(() => {
     setStatusText("Ready");
@@ -149,6 +170,17 @@ export function DiskAnalysisPage() {
     <div className="flex h-full flex-col gap-3 p-4">
       <PageHeader title="Disk Analysis" description="Reproduce a WizTree / TreeSize style breakdown of an entire drive." />
 
+      <Card>
+        <VolumeSelector
+          volumes={volumes}
+          loading={volumesLoading}
+          error={volumesError}
+          selectedMountPoint={displayVolume?.mountPoint ?? null}
+          onSelect={selectVolume}
+          onRefresh={() => loadVolumes(true)}
+        />
+      </Card>
+
       <div className="flex items-stretch gap-3">
         <Card title="Select Location" className="flex-1">
           <div className="flex flex-col gap-2.5">
@@ -189,7 +221,10 @@ export function DiskAnalysisPage() {
         </Card>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="flex items-center justify-between gap-3">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+        <DemoBadge />
+      </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
@@ -301,23 +336,35 @@ export function DiskAnalysisPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
-          <Card title="Drive Usage">
+          <Card title="Drive Usage" action={<DemoBadge />}>
             <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={130} />
           </Card>
           <Card title="Drive Information">
-            <dl className="grid grid-cols-[80px_1fr] gap-y-1.5 text-[12.5px]">
-              <dt className="text-fg-muted">Drive:</dt>
-              <dd className="text-fg">{driveD.label} ({driveD.letter})</dd>
-              <dt className="text-fg-muted">Total:</dt>
-              <dd className="text-fg">{formatBytes(driveD.totalBytes)}</dd>
-              <dt className="text-fg-muted">Used:</dt>
-              <dd className="text-fg">{formatBytes(driveD.usedBytes)} ({formatPercent((driveD.usedBytes / driveD.totalBytes) * 100)})</dd>
-              <dt className="text-fg-muted">Free:</dt>
-              <dd className="text-fg">{formatBytes(driveD.freeBytes)}</dd>
-            </dl>
-            <ProgressBar value={(driveD.usedBytes / driveD.totalBytes) * 100} className="mt-2.5" />
+            {displayVolume ? (
+              <>
+                <dl className="grid grid-cols-[80px_1fr] gap-y-1.5 text-[12.5px]">
+                  <dt className="text-fg-muted">Drive:</dt>
+                  <dd className="text-fg">{displayVolume.name}</dd>
+                  <dt className="text-fg-muted">File system:</dt>
+                  <dd className="text-fg">{displayVolume.fileSystem ?? "Unknown"}</dd>
+                  <dt className="text-fg-muted">Total:</dt>
+                  <dd className="text-fg">{formatBytes(displayVolume.totalBytes)}</dd>
+                  <dt className="text-fg-muted">Used:</dt>
+                  <dd className="text-fg">
+                    {formatBytes(displayVolume.usedBytes)} ({formatPercent(displayVolume.usagePercent)})
+                  </dd>
+                  <dt className="text-fg-muted">Free:</dt>
+                  <dd className="text-fg">{formatBytes(displayVolume.freeBytes)}</dd>
+                </dl>
+                <ProgressBar value={displayVolume.usagePercent} className="mt-2.5" />
+              </>
+            ) : (
+              <p className="text-xs text-fg-subtle">
+                {volumesLoading ? "Enumerating storage volumes..." : "Select a volume above to see its real capacity."}
+              </p>
+            )}
           </Card>
-          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3">
+          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3" action={<DemoBadge />}>
             {diskFileTypeStats.slice(0, 5).map((s, i) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="flex items-center gap-1.5 text-fg-muted">
@@ -332,7 +379,17 @@ export function DiskAnalysisPage() {
         </div>
       </div>
 
-      <Card title="Files & Folders" padded={false} bodyClassName="h-[230px]" action={<SlidersHorizontal size={13} className="text-fg-subtle" />}>
+      <Card
+        title="Files & Folders"
+        padded={false}
+        bodyClassName="h-[230px]"
+        action={
+          <div className="flex items-center gap-2">
+            <DemoBadge />
+            <SlidersHorizontal size={13} className="text-fg-subtle" />
+          </div>
+        }
+      >
         <DataTable
           columns={columns}
           rows={visibleRows.map((r) => r.node)}

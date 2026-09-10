@@ -8,6 +8,7 @@ import { Select } from "@/components/controls/Select";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Button } from "@/components/controls/Button";
 import { Tabs } from "@/components/controls/Tabs";
+import { DemoBadge } from "@/components/controls/DemoBadge";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { LineChartPanel } from "@/components/charts/LineChartPanel";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
@@ -115,10 +116,14 @@ export function DataTransferPage() {
   const remainingSeconds = speedBps > 0 ? (totalBytes - bytesProcessed) / speedBps : 0;
 
   function startTransfer() {
-    setLog((l) => [...l, `Starting ${mode} from ${source} to ${destination}...`]);
+    toast.warning(
+      "Phase 2 Read-Only Mode — source/destination can be real paths now, but no file is actually copied, moved or written. The progress below is simulated.",
+      "Phase 2 Read-Only Mode",
+    );
+    setLog((l) => [...l, `Starting ${mode} from ${source} to ${destination}... (Phase 2 Read-Only Mode - simulated)`]);
     setSpeedHistory([]);
     lastSecondRef.current = -1;
-    setStatusText(`${mode[0].toUpperCase()}${mode.slice(1)}ing files...`);
+    setStatusText(`${mode[0].toUpperCase()}${mode.slice(1)}ing files... (simulated)`);
     transfer.start(20);
   }
 
@@ -185,7 +190,10 @@ export function DataTransferPage() {
         </Card>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="flex items-center justify-between gap-3">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+        <DemoBadge label="Simulated Transfer" />
+      </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {tab === "file-list" && (

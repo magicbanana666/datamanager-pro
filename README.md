@@ -8,12 +8,14 @@ SyncBack-style copy/move/sync, network & port scanning, scheduling,
 reporting and administration utilities into a single professional,
 dark-mode admin tool.
 
-> **Current Phase: Phase 1 — UI Only.** Every screen in this build is fully
-> interactive but runs entirely on realistic mock/demo data. No disk
-> scanning, network scanning, file copying, synchronization, deletion,
-> scheduling, filesystem modification, or port scanning is implemented yet.
-> See [PHASE1.md](./PHASE1.md) for exactly what's built and
-> [ROADMAP.md](./ROADMAP.md) for what comes next.
+> **Current Phase: Phase 2 — Real, Read-Only Filesystem Layer.** Volume
+> enumeration, folder/file browsing, path validation and non-recursive
+> folder/file metadata are now backed by real Rust/Win32 code — no mock
+> data for those. Everything else (the high-speed recursive scanner,
+> file copy/move/sync/delete, duplicate detection, network share
+> discovery, port scanning, scheduler execution) is still mock/simulated.
+> See [PHASE1.md](./PHASE1.md) and [PHASE2.md](./PHASE2.md) for exactly
+> what's built and [ROADMAP.md](./ROADMAP.md) for what comes next.
 
 ## Requirements
 
@@ -82,9 +84,13 @@ npm run tauri build
 
 ## Current Phase
 
-**Phase 1 — UI Only.** See [PHASE1.md](./PHASE1.md) for the full list of
-implemented pages/components and the explicit "no real backend
-operations" guarantee.
+**Phase 1 — Complete** (UI only, see [PHASE1.md](./PHASE1.md)).
+**Phase 2 — Complete** (real, read-only filesystem layer, see
+[PHASE2.md](./PHASE2.md)): real volume enumeration, real folder/file
+browsing and metadata, real path validation, and a native folder-picker
+dialog wired into every "Browse..." button, with a hard guarantee that
+nothing in the Rust crate can delete, move, copy, rename, or otherwise
+write to the filesystem.
 
 ## Architecture Overview
 
@@ -94,8 +100,13 @@ src/
   pages/            One folder per sidebar page, each a self-contained
                      page component composed from src/components
   mock/             Typed mock-data modules (one per feature area)
-  models/           Shared TypeScript types/interfaces for that data
-  state/            Zustand stores (settings, toasts/dialogs, scheduler)
+  models/           Shared TypeScript types/interfaces for that data,
+                     including `backend.ts` (mirrors the Rust models)
+  api/              Typed `invoke()` wrappers: `backend.ts` (filesystem/
+                     storage/system commands) and `dialog.ts` (native
+                     folder/file picker)
+  state/            Zustand stores (settings, toasts/dialogs, scheduler,
+                     and `filesystemStore` for the real backend)
   hooks/             Reusable hooks (fake progress simulator, element size,
                      backend status)
   utils/            Formatting, color palette, filesystem-tree helpers
@@ -104,13 +115,23 @@ src/
 src-tauri/
   src/
     main.rs         Entry point
-    lib.rs          Registers the Phase 1 diagnostic commands
-    commands/       Tauri commands, grouped by feature area (only
-                     `system` has real commands in Phase 1; disk/
-                     network/transfer/scheduler are documented, empty
-                     placeholders reserved for later phases)
-    models/         Rust-side data shapes (mirrors `src/models`)
-    services/       Business-logic layer placeholder for later phases
+    lib.rs          Registers all Tauri commands, the dialog plugin,
+                     and `tracing` logging
+    commands/       Tauri commands, grouped by feature area: `system`
+                     (real), `filesystem` and `storage` (real, Phase 2),
+                     `network`/`transfer`/`scheduler` (still documented,
+                     empty placeholders reserved for later phases)
+    models/         Rust-side data shapes (mirrors `src/models`),
+                     including `errors.rs` (`AppError`), `storage.rs`
+                     and `filesystem.rs`
+    services/       Business logic behind the commands: `path_service`,
+                     `filesystem_service`, `storage_service` (all
+                     read-only, non-recursive)
+    platform/       Windows-specific Win32 FFI (`windows.rs`) behind a
+                     `platform::current` abstraction, with a
+                     non-Windows `fallback.rs`
+    utils/          Path normalization, byte-size formatting, and
+                     UTC-ISO8601 timestamp helpers shared by services
 ```
 
 ### Component layers (`src/components/`)
@@ -132,11 +153,20 @@ src-tauri/
   `Toggle`, `Tabs`, `Badge`, `LocationPicker`, `HighlightText`
 - `toast/` — `ToastHost`, driven by `state/toastStore.ts`
 - `layout/` — `PageHeader`
+- `filesystem/` — real-backend UI pieces added in Phase 2:
+  `PathBreadcrumb` (clickable path segments), `VolumeSelector` (real
+  drive chips with live capacity), `DirectoryTree` (lazy-loading real
+  folder tree, fetches one level at a time)
 
 ### State management (`src/state/`)
 
 Kept deliberately simple (per the Phase 1 brief, no Redux):
 
+- `filesystemStore` — real backend state for the single-location pages
+  (Disk Analysis, Folder Analysis): volumes, current path, directory
+  listing/summary, loading/error state. Pages needing two simultaneous
+  locations (Comparison, Data Transfer, Sync) call `api/backend.ts`
+  directly instead
 - `settingsStore` — the Settings dialog's `AppSettings`
 - `uiStore` — toolbar dialog open/close flags, status bar text/memory,
   and the generic placeholder-dialog content
@@ -160,15 +190,15 @@ none of it touches the filesystem, network, or OS.
 
 ## Planned Future Backend Integration
 
-Phase 1's Rust crate already has the module layout (`commands/`,
-`models/`, `services/`, split by feature area) that later phases will
-fill in without restructuring: real drive/folder enumeration (Phase 2),
-a fast scanning engine (Phase 3), a real analysis/treemap engine (Phase
-4), search/comparison/duplicate engines (Phase 5), a journaled copy/move
-engine (Phase 6), an incremental sync engine (Phase 7), network share +
-port scanning (Phase 8), a real scheduler + reporting (Phase 9), and
-installer/production hardening (Phase 10). See
-[ROADMAP.md](./ROADMAP.md) for details.
+Phase 2 delivered real, read-only volume enumeration and folder/file
+browsing. What's still ahead, without restructuring the existing
+module layout (`commands/`, `models/`, `services/`, `platform/`,
+`utils/`): a fast recursive scanning engine (Phase 3), a real
+analysis/treemap engine (Phase 4), search/comparison/duplicate engines
+(Phase 5), a journaled copy/move engine (Phase 6), an incremental sync
+engine (Phase 7), network share + port scanning (Phase 8), a real
+scheduler + reporting (Phase 9), and installer/production hardening
+(Phase 10). See [ROADMAP.md](./ROADMAP.md) for details.
 
 ## Design Decisions
 
@@ -194,14 +224,28 @@ installer/production hardening (Phase 10). See
   global (settings, toasts, scheduler tasks); everything else is local
   component state, per the brief's "don't over-engineer" guidance.
 
-## Known Limitations (Phase 1)
+## Known Limitations (Phase 2)
 
-- All data is mock data; nothing here reflects real drives, files, or
-  network hosts.
-- "Browse..." buttons, most toolbar actions, and most secondary buttons
-  intentionally just show a "Phase 1 Demo Mode" toast/dialog instead of
-  opening a real file/folder picker.
+- Volume enumeration, folder/file browsing, path validation and
+  non-recursive folder/file metadata are real. Everything analytical
+  layered on top of a selected path (treemaps, charts, top-files/types,
+  duplicates, timelines) is still mock data, clearly marked with a
+  "Demo Visualization" badge.
+- No recursive scanning: `get_directory_summary` and `DirectoryTree`
+  only ever look at one directory level at a time; there is no
+  aggregate real size for a folder tree yet (that's Phase 3).
+- Data Transfer and Sync accept real source/destination paths and
+  validate them for real, but clicking "Start" only ever runs the
+  existing simulated progress animation — a "Phase 2 Read-Only Mode"
+  toast says so explicitly, and nothing is copied, moved, or written.
+- Network Analysis's UNC path field is validated with the same
+  real, read-only `validate_path` command, but there is no SMB share
+  discovery or LAN enumeration — the mock share/host data is unchanged.
 - The bottom status bar's "Memory" value is a cosmetically animated
   number, not real process telemetry.
 - No data persists between app restarts (Settings, Scheduler edits,
   toggled duplicate selections, etc. all reset on relaunch).
+
+See [PHASE2.md](./PHASE2.md) for the full breakdown of what's real vs.
+mock, page by page, plus the Rust test suite and the destructive-API
+safety audit.

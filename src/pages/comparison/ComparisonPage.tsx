@@ -18,6 +18,7 @@ import { Checkbox } from "@/components/controls/Checkbox";
 import { Select } from "@/components/controls/Select";
 import { Tabs } from "@/components/controls/Tabs";
 import { Badge } from "@/components/controls/Badge";
+import { DemoBadge } from "@/components/controls/DemoBadge";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { BarChartPanel } from "@/components/charts/BarChartPanel";
 import { ProgressBar } from "@/components/charts/ProgressBar";
@@ -244,7 +245,12 @@ export function ComparisonPage() {
         title="Detailed Comparison"
         padded={false}
         bodyClassName="h-[280px]"
-        action={<Info size={13} className="text-fg-subtle" />}
+        action={
+          <div className="flex items-center gap-2">
+            <DemoBadge label="Demo Comparison" />
+            <Info size={13} className="text-fg-subtle" />
+          </div>
+        }
       >
         <DataTable
           columns={columns}

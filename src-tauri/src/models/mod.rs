@@ -1,11 +1,17 @@
-//! Data shapes shared by Tauri commands. Only `system` has real fields in
-//! Phase 1; the rest are documented placeholders reserved for later phases
-//! so the module layout doesn't need to change when real scanning,
-//! transfer, network and scheduler engines are added.
+//! Data shapes shared by Tauri commands.
+//!
+//! `errors`, `filesystem` and `storage` back the Phase 2 read-only
+//! filesystem API. `system` holds both the Phase 1 diagnostic types and
+//! the real `SystemInfo` added in Phase 2. `network`, `scheduler` and
+//! `transfer` remain documented, empty placeholders reserved for later
+//! phases so the module layout doesn't need to change when real network
+//! scanning, scheduling and transfer engines are added.
 
+pub mod errors;
+pub mod filesystem;
+pub mod storage;
 pub mod system;
 
-pub mod disk;
 pub mod network;
 pub mod scheduler;
 pub mod transfer;

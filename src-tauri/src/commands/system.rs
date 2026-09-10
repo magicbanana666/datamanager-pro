@@ -1,7 +1,10 @@
-//! Diagnostic Tauri commands used to prove the frontend/backend bridge
-//! works. All values are mocked - Phase 1 does no real system inspection.
+//! Diagnostic and system-info commands. `get_system_info` is real as of
+//! Phase 2 (via `sysinfo`); it deliberately knows nothing about disks or
+//! volumes - see `commands::storage` for that.
 
-use crate::models::system::{AppVersionInfo, SystemInfoMock};
+use super::blocking;
+use crate::models::errors::AppError;
+use crate::models::system::{AppVersionInfo, SystemInfo};
 
 #[tauri::command]
 pub fn get_app_version() -> AppVersionInfo {
@@ -12,18 +15,29 @@ pub fn get_app_version() -> AppVersionInfo {
     }
 }
 
-/// Returns a fixed, hand-authored payload rather than real hardware
-/// telemetry. The `System & Disk Tools > System Info` card in the UI is
-/// wired to this command purely to demonstrate the invoke round-trip.
+/// Real OS/CPU/RAM information gathered via `sysinfo`. Kept separate
+/// from the filesystem/storage API on purpose.
 #[tauri::command]
-pub fn get_system_info_mock() -> SystemInfoMock {
-    SystemInfoMock {
-        os: "Windows".to_string(),
-        os_version: "11 Pro (Phase 1 mock value)".to_string(),
-        cpu: "Mock CPU - 8 cores / 16 threads".to_string(),
-        total_memory_mb: 32768,
-        hostname: "DEMO-PC".to_string(),
-    }
+pub async fn get_system_info() -> Result<SystemInfo, AppError> {
+    tracing::info!("get_system_info");
+    blocking(|| {
+        use sysinfo::System;
+        let mut sys = System::new();
+        sys.refresh_memory();
+
+        Ok(SystemInfo {
+            os: System::name().unwrap_or_else(|| "Unknown".to_string()),
+            os_version: System::os_version().unwrap_or_else(|| "Unknown".to_string()),
+            hostname: System::host_name(),
+            architecture: std::env::consts::ARCH.to_string(),
+            cpu_logical_cores: std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(1),
+            total_memory_bytes: sys.total_memory(),
+            available_memory_bytes: sys.available_memory(),
+        })
+    })
+    .await
 }
 
 /// Simple liveness check the frontend can call to confirm the Rust side

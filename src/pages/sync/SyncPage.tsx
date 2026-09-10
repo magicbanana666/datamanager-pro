@@ -8,6 +8,7 @@ import { Checkbox } from "@/components/controls/Checkbox";
 import { TextInput } from "@/components/controls/TextInput";
 import { Button } from "@/components/controls/Button";
 import { Tabs } from "@/components/controls/Tabs";
+import { DemoBadge } from "@/components/controls/DemoBadge";
 import { Badge } from "@/components/controls/Badge";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { LineChartPanel } from "@/components/charts/LineChartPanel";
@@ -85,8 +86,12 @@ export function SyncPage() {
   };
 
   function startSync() {
-    setLog((l) => [...l, `Starting ${mode} sync from ${source} to ${destination}...`]);
-    setStatusText("Syncing files...");
+    toast.warning(
+      "Phase 2 Read-Only Mode — source/destination can be real paths now, but no file is actually synced or written. The progress below is simulated.",
+      "Phase 2 Read-Only Mode",
+    );
+    setLog((l) => [...l, `Starting ${mode} sync from ${source} to ${destination}... (Phase 2 Read-Only Mode - simulated)`]);
+    setStatusText("Syncing files... (simulated)");
     sync.start(16);
   }
 
@@ -142,7 +147,10 @@ export function SyncPage() {
         </Card>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="flex items-center justify-between gap-3">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+        <DemoBadge label="Simulated Sync" />
+      </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-3">
         {tab === "filters" && (

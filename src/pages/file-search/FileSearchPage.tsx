@@ -8,6 +8,7 @@ import { Select } from "@/components/controls/Select";
 import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
+import { DemoBadge } from "@/components/controls/DemoBadge";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { HighlightText } from "@/components/controls/HighlightText";
 import { savedSearches, searchResults } from "@/mock/search";
@@ -144,7 +145,10 @@ export function FileSearchPage() {
         </Card>
 
         <Card padded={false} bodyClassName="flex flex-col gap-2 p-3 min-h-0" className="min-h-0">
-          <Tabs tabs={RESULT_TABS} active={resultTab} onChange={setResultTab} />
+          <div className="flex items-center justify-between gap-3">
+            <Tabs tabs={RESULT_TABS} active={resultTab} onChange={setResultTab} className="min-w-0 flex-1" />
+            <DemoBadge label="Demo Results" />
+          </div>
           {resultTab === "results" && (
             <DataTable
               columns={columns}

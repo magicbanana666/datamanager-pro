@@ -1,13 +1,16 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import { useNavigate } from "react-router-dom";
-import { File, Folder, ScanSearch } from "lucide-react";
+import { AlertTriangle, File, Folder, Loader2, ScanSearch } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/cards/Card";
 import { LocationPicker } from "@/components/controls/LocationPicker";
 import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
+import { DemoBadge } from "@/components/controls/DemoBadge";
+import { PathBreadcrumb } from "@/components/filesystem/PathBreadcrumb";
+import { DirectoryTree } from "@/components/filesystem/DirectoryTree";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { BarChartPanel } from "@/components/charts/BarChartPanel";
@@ -23,6 +26,7 @@ import { flattenVisible } from "@/utils/fsTree";
 import type { FsNode } from "@/models/common";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
 import { useSimulatedProgress } from "@/hooks/useSimulatedProgress";
+import { useFilesystemStore } from "@/state/filesystemStore";
 import { useUiStore } from "@/state/uiStore";
 import { toast } from "@/state/toastStore";
 
@@ -51,6 +55,14 @@ export function FolderAnalysisPage() {
     fastScan: true,
   });
   const setStatusText = useUiStore((s) => s.setStatusText);
+  const { currentPath, directorySummary, loading: browsing, error: browseError, browse } = useFilesystemStore();
+
+  useEffect(() => {
+    void browse(location);
+    // Only re-browse when the page first mounts or the user explicitly
+    // browses/scans a new location - not on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const scan = useSimulatedProgress(() => {
     setStatusText("Ready");
@@ -81,6 +93,7 @@ export function FolderAnalysisPage() {
   function startScan() {
     setStatusText(`Scanning ${location}...`);
     scan.start(3);
+    void browse(location);
   }
 
   const columns: DataTableColumn<FsNode>[] = [
@@ -145,6 +158,44 @@ export function FolderAnalysisPage() {
               {scan.status === "running" ? `Scanning... ${scan.progress.toFixed(0)}%` : "Scan"}
             </Button>
             {scan.status === "running" && <ProgressBar value={scan.progress} tone="accent" />}
+
+            <div className="mt-1 flex flex-col gap-1.5 border-t border-border pt-2">
+              <PathBreadcrumb
+                path={currentPath ?? location}
+                onNavigate={(p) => {
+                  setLocation(p);
+                  void browse(p);
+                }}
+              />
+              {browsing && (
+                <div className="flex items-center gap-2 text-[12px] text-fg-subtle">
+                  <Loader2 size={13} className="animate-spin" /> Reading folder...
+                </div>
+              )}
+              {browseError && (
+                <div className="flex items-center gap-2 text-[12px] text-danger">
+                  <AlertTriangle size={13} /> {browseError.message}
+                </div>
+              )}
+              {!browsing && !browseError && directorySummary && (
+                <div className="flex flex-wrap gap-4 text-[12.5px] text-fg-muted">
+                  <span>
+                    Direct files: <span className="font-medium text-fg">{formatNumber(directorySummary.directFileCount)}</span>
+                  </span>
+                  <span>
+                    Direct folders: <span className="font-medium text-fg">{formatNumber(directorySummary.directFolderCount)}</span>
+                  </span>
+                  <span>
+                    Direct size: <span className="font-medium text-fg">{formatBytes(directorySummary.directFileBytes)}</span>
+                  </span>
+                  {directorySummary.lastModified && (
+                    <span>
+                      Modified: <span className="font-medium text-fg">{formatDate(directorySummary.lastModified)}</span>
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </Card>
 
@@ -159,7 +210,10 @@ export function FolderAnalysisPage() {
         </Card>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="flex items-center justify-between gap-3">
+        <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
+        <DemoBadge />
+      </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
@@ -238,11 +292,22 @@ export function FolderAnalysisPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
+          <Card title="Browse (Real)" padded={false} bodyClassName="h-[160px] p-2">
+            <DirectoryTree
+              rootPath={currentPath ?? location}
+              selectedPath={currentPath}
+              onSelect={(p) => {
+                setLocation(p);
+                void browse(p);
+              }}
+              className="h-full"
+            />
+          </Card>
           <FolderDetailsCard node={selectedNode ?? currentNode} />
-          <Card title="Size Distribution">
+          <Card title="Size Distribution" action={<DemoBadge />}>
             <DonutChart data={folderSizeDistribution} centerLabel="Distribution" centerValue={formatBytes(currentNode.size)} size={120} />
           </Card>
-          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3">
+          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3" action={<DemoBadge />}>
             {folderFileTypeStats.map((s) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="text-fg-muted">{s.label}</span>
@@ -250,7 +315,7 @@ export function FolderAnalysisPage() {
               </div>
             ))}
           </Card>
-          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3">
+          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3" action={<DemoBadge />}>
             {folderLargestFiles.slice(0, 10).map((f, i) => (
               <div key={f.name + i} className="flex items-center justify-between gap-2 text-[12px]">
                 <span className="min-w-0 flex-1 truncate text-fg-muted">
@@ -263,7 +328,7 @@ export function FolderAnalysisPage() {
         </div>
       </div>
 
-      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px]">
+      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px]" action={<DemoBadge />}>
         <DataTable
           columns={columns}
           rows={visibleRows.map((r) => r.node)}

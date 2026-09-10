@@ -4,6 +4,7 @@ import { Button } from "@/components/controls/Button";
 import { Badge } from "@/components/controls/Badge";
 import { useUiStore } from "@/state/uiStore";
 import { useBackendStatus } from "@/hooks/useBackendStatus";
+import { formatBytes } from "@/utils/format";
 
 export function HelpDialog() {
   const { helpOpen, closeHelp, appVersion } = useUiStore();
@@ -20,20 +21,20 @@ export function HelpDialog() {
         <div>
           <div className="text-[15px] font-semibold text-fg">DataManager Pro</div>
           <div className="text-xs text-fg-muted">
-            Analyze. Migrate. Manage. Your Data. — v{appVersion} (Phase 1 - UI Preview)
+            Analyze. Migrate. Manage. Your Data. — v{appVersion} (Phase 2 - Read-Only Filesystem)
           </div>
         </div>
         <div className="flex flex-col gap-2 text-[13px] text-fg-muted">
           <div className="flex items-start gap-2.5">
             <BookOpen size={15} className="mt-0.5 shrink-0 text-accent" />
             <span>
-              This build is a Phase 1 interface preview. All scans, transfers, and system actions run on mock data -
-              no files are read, copied, moved, or deleted.
+              Phase 2 can browse real drives, folders and files (read-only). Scans, transfers, sync, duplicate
+              detection and network/port scanning are still mock - no files are copied, moved, deleted, or written.
             </span>
           </div>
           <div className="flex items-start gap-2.5">
             <LifeBuoy size={15} className="mt-0.5 shrink-0 text-accent" />
-            <span>Real filesystem, network, and scheduling engines arrive in later phases (see ROADMAP.md).</span>
+            <span>The high-performance recursive scanner and transfer/sync engines arrive in later phases (see ROADMAP.md).</span>
           </div>
           <div className="flex items-start gap-2.5">
             <MessageSquare size={15} className="mt-0.5 shrink-0 text-accent" />
@@ -62,9 +63,14 @@ export function HelpDialog() {
               <dt>ping_backend:</dt>
               <dd className="text-fg">"{backend.ping}"</dd>
               <dt>get_app_version:</dt>
-              <dd className="text-fg">{backend.appVersion.name} v{backend.appVersion.version} (Tauri {backend.appVersion.tauri_version})</dd>
-              <dt>system_info:</dt>
-              <dd className="text-fg">{backend.systemInfo.cpu} · {backend.systemInfo.total_memory_mb} MB (mock)</dd>
+              <dd className="text-fg">
+                {backend.appVersion.name} v{backend.appVersion.version} (Tauri {backend.appVersion.tauriVersion})
+              </dd>
+              <dt>get_system_info:</dt>
+              <dd className="text-fg">
+                {backend.systemInfo.os} {backend.systemInfo.osVersion} · {backend.systemInfo.cpuLogicalCores} logical
+                cores · {formatBytes(backend.systemInfo.totalMemoryBytes)} RAM
+              </dd>
             </dl>
           )}
           {backend.state === "unavailable" && (
