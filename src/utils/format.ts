@@ -25,14 +25,16 @@ export function formatPercent(n: number, decimals = 1): string {
   return `${n.toFixed(decimals)}%`;
 }
 
-export function formatDate(isoOrDate: string | Date): string {
+export function formatDate(isoOrDate: string | Date | null): string {
+  if (isoOrDate === null) return "-";
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   if (Number.isNaN(d.getTime())) return "-";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatDateShort(isoOrDate: string | Date): string {
+export function formatDateShort(isoOrDate: string | Date | null): string {
+  if (isoOrDate === null) return "-";
   const d = typeof isoOrDate === "string" ? new Date(isoOrDate) : isoOrDate;
   if (Number.isNaN(d.getTime())) return "-";
   const pad = (n: number) => String(n).padStart(2, "0");

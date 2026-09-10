@@ -154,7 +154,11 @@ export function DuplicateFinderPage() {
         <StatCard icon={ScanSearch} label="Duplicate Groups" value={String(totals.groups)} sublabel={`Selected: ${selectedCount} files`} tone="info" />
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
+      {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx -
+          same shared layout bug (this page doesn't use Treemap, but the
+          fix is the same generally-correct "actually fill available
+          height" behavior either way). */}
+      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="min-h-0" className="min-h-0 overflow-y-auto">
           {tab === "results" ? (
             <table className="w-full text-[12.5px]">

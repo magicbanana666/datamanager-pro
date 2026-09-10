@@ -190,7 +190,13 @@ export function SyncPage() {
             </p>
           </Card>
         ) : (
-          <Card padded={false} bodyClassName="h-[280px]" className="flex-1">
+          // flex-none on the body: cancels Card's default flex-1
+          // (flex-basis:0%) on the *body* div, which otherwise beats this
+          // fixed height in a flex-col layout - see the identical fix/
+          // comment in DiskAnalysisPage.tsx (PHASE4.md). The outer
+          // `className="flex-1"` is a separate, correct concern (sizing
+          // this Card itself within its own parent).
+          <Card padded={false} bodyClassName="h-[280px] flex-none" className="flex-1">
             <DataTable
               columns={columns}
               rows={tab === "conflicts" ? rows.filter((r) => r.action === "conflict") : rows}

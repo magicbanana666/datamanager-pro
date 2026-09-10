@@ -21,13 +21,15 @@ import { diskFileTypeStats, diskLargestFiles, diskTopFolders } from "@/mock/file
 import { diskExtensions, diskOwners, diskTimeline } from "@/mock/analysisExtra";
 import { QUICK_FILTERS, filterChildren, withChildren, type QuickFilterId } from "@/utils/fsFilters";
 import { flattenVisible } from "@/utils/fsTree";
+import { analyzeTree } from "@/utils/scanAnalysis";
 import type { FsNode } from "@/models/common";
 import type { StorageVolume } from "@/models/backend";
+import { DEFAULT_SCAN_OPTIONS } from "@/models/backend";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
-import { useSimulatedProgress } from "@/hooks/useSimulatedProgress";
+import { useScanNotifications } from "@/hooks/useScanNotifications";
 import { useFilesystemStore } from "@/state/filesystemStore";
+import { useScanStore } from "@/state/scanStore";
 import { useUiStore } from "@/state/uiStore";
-import { toast } from "@/state/toastStore";
 import { chartColor } from "@/utils/colors";
 
 const TABS = [
@@ -47,8 +49,18 @@ export function DiskAnalysisPage() {
   const [location, setLocation] = useState("D:\\Data");
   const [tab, setTab] = useState("treemap");
   const [quickFilter, setQuickFilter] = useState<QuickFilterId>("all");
-  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>([diskTree]);
-  const [selectedNode, setSelectedNode] = useState<FsNode | null>(diskTree.children?.[0] ?? null);
+  // A real scan's result is global (`useScanStore`) and can already
+  // exist when this page first mounts (e.g. navigating back after
+  // scanning) - the lazy initializer reads the store directly
+  // (`.getState()`, not the hook) so the very first render starts on
+  // the real root instead of briefly showing mock data isReal already
+  // claims is real. See the render-time sync below for the case where
+  // a scan completes *while* this page is already mounted.
+  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [useScanStore.getState().result?.root ?? diskTree]);
+  const [selectedNode, setSelectedNode] = useState<FsNode | null>(() => {
+    const root = useScanStore.getState().result?.root ?? diskTree;
+    return root.children?.[0] ?? null;
+  });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [options, setOptions] = useState({
     includeSubfolders: true,
@@ -57,6 +69,8 @@ export function DiskAnalysisPage() {
     scanInBackground: false,
   });
   const setStatusText = useUiStore((s) => s.setStatusText);
+  const realScan = useScanStore();
+  useScanNotifications();
 
   useEffect(() => {
     void loadVolumes();
@@ -64,6 +78,23 @@ export function DiskAnalysisPage() {
     // the Refresh button in VolumeSelector handles re-enumeration.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // A completed real scan replaces what the treemap/table are looking
+  // at - reset to its root rather than leaving the view on whatever
+  // mock/previous node was selected. Done inline during render (React's
+  // documented "adjusting state when a prop changes" pattern) rather
+  // than in a useEffect, so it takes effect in the same render instead
+  // of triggering an extra cascading one.
+  const [lastSeenResult, setLastSeenResult] = useState(realScan.result);
+  if (realScan.result !== lastSeenResult) {
+    setLastSeenResult(realScan.result);
+    if (realScan.result) {
+      const root = realScan.result.root;
+      setBreadcrumb([root]);
+      setSelectedNode(root.children?.[0] ?? root);
+      setExpandedIds(new Set());
+    }
+  }
 
   // Derived rather than effect-driven: once volumes load, fall back to
   // the first fixed volume for display without needing a setState pass.
@@ -76,10 +107,12 @@ export function DiskAnalysisPage() {
     setLocation(volume.mountPoint);
   }
 
-  const scan = useSimulatedProgress(() => {
-    setStatusText("Ready");
-    toast.success(`Scan completed - ${formatBytes(diskTree.size)} across ${formatNumber(diskTree.fileCount)} files.`);
-  });
+  // True once a real scan has completed - the treemap/table already
+  // work off `currentNode` generically, so the only thing this gates
+  // is which dataset backs the analytical tabs/cards below and
+  // whether their `DemoBadge` shows. Before any scan, this stays
+  // false and everything renders exactly as it did pre-Phase-4.
+  const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
   const filteredCurrentNode = useMemo(
@@ -88,6 +121,17 @@ export function DiskAnalysisPage() {
   );
 
   const visibleRows = useMemo(() => flattenVisible(filteredCurrentNode, expandedIds), [filteredCurrentNode, expandedIds]);
+
+  // Scoped to the current breadcrumb position, not always the whole
+  // scan root - drilling into a subfolder re-scopes File Types/Top
+  // Files/Top Folders/Timeline/Extensions to it, same as a real
+  // WizTree/TreeSize-style tool. Only recomputed on navigation.
+  const analysis = useMemo(() => analyzeTree(currentNode), [currentNode]);
+  const categoryStats = isReal ? analysis.categoryStats : diskFileTypeStats;
+  const topFilesData = isReal ? analysis.topFiles : diskLargestFiles;
+  const topFoldersData = isReal ? analysis.topFolders : diskTopFolders;
+  const extensionData = isReal ? analysis.extensionStats : diskExtensions;
+  const timelineData = isReal ? analysis.timeline : diskTimeline;
 
   function drillInto(node: FsNode) {
     setBreadcrumb((b) => [...b, node]);
@@ -100,7 +144,7 @@ export function DiskAnalysisPage() {
 
   function startScan() {
     setStatusText(`Scanning ${location}...`);
-    scan.start(3.5);
+    void realScan.start(location, DEFAULT_SCAN_OPTIONS);
   }
 
   function toggleExpand(id: string) {
@@ -163,7 +207,7 @@ export function DiskAnalysisPage() {
         </div>
       ),
     },
-    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified, render: (n) => formatDate(n.lastModified) },
+    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified ?? "", render: (n) => formatDate(n.lastModified) },
   ];
 
   return (
@@ -185,10 +229,37 @@ export function DiskAnalysisPage() {
         <Card title="Select Location" className="flex-1">
           <div className="flex flex-col gap-2.5">
             <LocationPicker value={location} onChange={setLocation} />
-            <Button variant="primary" icon={ScanSearch} onClick={startScan} disabled={scan.status === "running"} className="self-start">
-              {scan.status === "running" ? `Scanning... ${scan.progress.toFixed(0)}%` : "Scan"}
-            </Button>
-            {scan.status === "running" && <ProgressBar value={scan.progress} tone="accent" />}
+            {/* Kept to exactly two rows (LocationPicker + this one, plus
+                the progress bar only while actively scanning) regardless
+                of scan state - folding the completed summary in here
+                rather than a separate paragraph avoids regrowing this
+                card's height and squeezing the treemap row below it
+                (see PHASE2.md's identical layout-overflow note). */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                icon={ScanSearch}
+                onClick={startScan}
+                disabled={realScan.status === "scanning"}
+                className="self-start"
+              >
+                {realScan.status === "scanning"
+                  ? `Scanning... ${formatNumber(realScan.progress?.scannedFiles ?? 0)} files`
+                  : "Scan"}
+              </Button>
+              {realScan.status === "scanning" && (
+                <Button variant="secondary" onClick={() => void realScan.cancel()} className="self-start">
+                  Cancel
+                </Button>
+              )}
+              {realScan.status === "completed" && realScan.result && (
+                <span className="text-[11.5px] text-fg-muted">
+                  {formatBytes(realScan.result.root.size)} · {formatNumber(realScan.result.root.fileCount)} files ·{" "}
+                  {formatNumber(realScan.result.root.folderCount)} folders
+                </span>
+              )}
+            </div>
+            {realScan.status === "scanning" && <ProgressBar indeterminate tone="accent" />}
           </div>
         </Card>
 
@@ -223,10 +294,22 @@ export function DiskAnalysisPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
-        <DemoBadge />
+        {/* "Users" has no real backend (no owner lookup - see PHASE2.md) so it stays badged regardless. */}
+        {(!isReal || tab === "users") && <DemoBadge />}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
+      {/* auto-rows-fr: keeps this grid's one implicit row stretched to the
+          available height (rather than shrink-to-content) - belt-and-
+          suspenders alongside the real fix below (Files & Folders'
+          `flex-none`), which is what actually mattered: without it, a
+          sibling `Card` with a fixed `bodyClassName="h-[…px]"` loses that
+          height to `Card`'s own default `flex-1` (flex-basis:0% beats an
+          explicit `height` in flexbox), so the table grows to fit every
+          real row instead of scrolling within its box - starving this
+          flex-1 grid (and the Treemap's ResizeObserver-measured height)
+          down to 0 once real data had enough rows for it to show. See
+          PHASE4.md. */}
+      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "treemap" && (
             <>
@@ -236,7 +319,7 @@ export function DiskAnalysisPage() {
           )}
           {tab === "chart" && (
             <BarChartPanel
-              data={diskTopFolders.map((f) => ({ name: f.path.split("\\").pop(), size: f.size }))}
+              data={topFoldersData.map((f) => ({ name: f.path.split("\\").pop(), size: f.size }))}
               categoryKey="name"
               series={[{ key: "size", label: "Size", color: "var(--color-chart-1)" }]}
               height={360}
@@ -244,12 +327,12 @@ export function DiskAnalysisPage() {
           )}
           {tab === "file-types" && (
             <div className="flex h-full items-center justify-center">
-              <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={180} />
+              <DonutChart data={categoryStats} centerLabel="Total Size" centerValue={formatBytes(currentNode.size)} size={180} />
             </div>
           )}
           {tab === "top-files" && (
             <div className="flex flex-col gap-1.5 overflow-y-auto">
-              {diskLargestFiles.map((f, i) => (
+              {topFilesData.map((f, i) => (
                 <div key={f.path} className="flex items-center gap-3 rounded-md border border-border bg-surface-alt px-3 py-2">
                   <span className="w-5 text-fg-subtle">#{i + 1}</span>
                   <File size={14} className="text-fg-subtle" />
@@ -264,7 +347,7 @@ export function DiskAnalysisPage() {
           )}
           {tab === "top-folders" && (
             <div className="flex flex-col gap-1.5 overflow-y-auto">
-              {diskTopFolders.map((f, i) => (
+              {topFoldersData.map((f, i) => (
                 <div key={f.path} className="flex items-center gap-3 rounded-md border border-border bg-surface-alt px-3 py-2">
                   <span className="w-5 text-fg-subtle">#{i + 1}</span>
                   <Folder size={14} className="text-warning" />
@@ -276,7 +359,7 @@ export function DiskAnalysisPage() {
           )}
           {tab === "timeline" && (
             <BarChartPanel
-              data={diskTimeline}
+              data={timelineData}
               categoryKey="label"
               series={[{ key: "size", label: "Size modified", color: "var(--color-chart-5)" }]}
               height={360}
@@ -294,7 +377,7 @@ export function DiskAnalysisPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {diskExtensions.map((e, i) => (
+                  {extensionData.map((e, i) => (
                     <tr key={e.extension} className="border-b border-border/60">
                       <td className="flex items-center gap-2 px-3 py-2">
                         <span className="h-2 w-2 rounded-full" style={{ backgroundColor: chartColor(i) }} />
@@ -336,8 +419,8 @@ export function DiskAnalysisPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
-          <Card title="Drive Usage" action={<DemoBadge />}>
-            <DonutChart data={diskFileTypeStats} centerLabel="Total Size" centerValue={formatBytes(diskTree.size)} size={130} />
+          <Card title="Drive Usage" action={!isReal && <DemoBadge />}>
+            <DonutChart data={categoryStats} centerLabel="Total Size" centerValue={formatBytes(currentNode.size)} size={130} />
           </Card>
           <Card title="Drive Information">
             {displayVolume ? (
@@ -364,8 +447,8 @@ export function DiskAnalysisPage() {
               </p>
             )}
           </Card>
-          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3" action={<DemoBadge />}>
-            {diskFileTypeStats.slice(0, 5).map((s, i) => (
+          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3" action={!isReal && <DemoBadge />}>
+            {categoryStats.slice(0, 5).map((s, i) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="flex items-center gap-1.5 text-fg-muted">
                   <span className="h-2 w-2 rounded-full" style={{ backgroundColor: chartColor(i) }} />
@@ -382,10 +465,13 @@ export function DiskAnalysisPage() {
       <Card
         title="Files & Folders"
         padded={false}
-        bodyClassName="h-[230px]"
+        // flex-none: cancels Card's default flex-1 (flex-basis:0%), which
+        // otherwise beats this fixed height in a flex-col layout - see the
+        // comment above the treemap/sidebar grid.
+        bodyClassName="h-[230px] flex-none"
         action={
           <div className="flex items-center gap-2">
-            <DemoBadge />
+            {!isReal && <DemoBadge />}
             <SlidersHorizontal size={13} className="text-fg-subtle" />
           </div>
         }

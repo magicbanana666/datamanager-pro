@@ -23,12 +23,14 @@ import { folderFileTypeStats, folderLargestFiles, folderSizeDistribution } from 
 import { diskTimeline } from "@/mock/analysisExtra";
 import { duplicateGroups } from "@/mock/duplicates";
 import { flattenVisible } from "@/utils/fsTree";
+import { analyzeTree, topChildrenWithOthers } from "@/utils/scanAnalysis";
 import type { FsNode } from "@/models/common";
+import { DEFAULT_SCAN_OPTIONS } from "@/models/backend";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
-import { useSimulatedProgress } from "@/hooks/useSimulatedProgress";
+import { useScanNotifications } from "@/hooks/useScanNotifications";
 import { useFilesystemStore } from "@/state/filesystemStore";
+import { useScanStore } from "@/state/scanStore";
 import { useUiStore } from "@/state/uiStore";
-import { toast } from "@/state/toastStore";
 
 const TABS = [
   { id: "treemap", label: "Treemap" },
@@ -44,8 +46,20 @@ export function FolderAnalysisPage() {
   const navigate = useNavigate();
   const [location, setLocation] = useState("D:\\Data\\Projects");
   const [tab, setTab] = useState("treemap");
-  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>([projectsFolderTree]);
-  const [selectedNode, setSelectedNode] = useState<FsNode | null>(projectsFolderTree.children?.[0] ?? null);
+  // A real scan's result is global (`useScanStore`) and can already
+  // exist when this page first mounts (e.g. navigating back after
+  // scanning) - the lazy initializer reads the store directly
+  // (`.getState()`, not the hook) so the very first render starts on
+  // the real root instead of briefly showing mock data isReal already
+  // claims is real. See the render-time sync below for the case where
+  // a scan completes *while* this page is already mounted.
+  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [
+    useScanStore.getState().result?.root ?? projectsFolderTree,
+  ]);
+  const [selectedNode, setSelectedNode] = useState<FsNode | null>(() => {
+    const root = useScanStore.getState().result?.root ?? projectsFolderTree;
+    return root.children?.[0] ?? null;
+  });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [options, setOptions] = useState({
     includeSubfolders: true,
@@ -56,6 +70,8 @@ export function FolderAnalysisPage() {
   });
   const setStatusText = useUiStore((s) => s.setStatusText);
   const { currentPath, directorySummary, loading: browsing, error: browseError, browse } = useFilesystemStore();
+  const realScan = useScanStore();
+  useScanNotifications();
 
   useEffect(() => {
     void browse(location);
@@ -64,13 +80,52 @@ export function FolderAnalysisPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const scan = useSimulatedProgress(() => {
-    setStatusText("Ready");
-    toast.success(`Scan completed - ${formatBytes(projectsFolderTree.size)} across ${formatNumber(projectsFolderTree.fileCount)} files.`);
-  });
+  // A completed real scan replaces what the treemap/table are looking
+  // at - reset to its root rather than leaving the view on whatever
+  // mock/previous node was selected. Done inline during render (React's
+  // documented "adjusting state when a prop changes" pattern) rather
+  // than in a useEffect, so it takes effect in the same render instead
+  // of triggering an extra cascading one.
+  const [lastSeenResult, setLastSeenResult] = useState(realScan.result);
+  if (realScan.result !== lastSeenResult) {
+    setLastSeenResult(realScan.result);
+    if (realScan.result) {
+      const root = realScan.result.root;
+      setBreadcrumb([root]);
+      setSelectedNode(root.children?.[0] ?? root);
+      setExpandedIds(new Set());
+    }
+  }
+
+  // True once a real scan has completed - the treemap/table already
+  // work off `currentNode` generically, so the only thing this gates
+  // is which dataset backs the analytical tabs/cards below and
+  // whether their `DemoBadge` shows. Before any scan, this stays
+  // false and everything renders exactly as it did pre-Phase-4.
+  const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
   const visibleRows = useMemo(() => flattenVisible(currentNode, expandedIds), [currentNode, expandedIds]);
+
+  // Scoped to the current breadcrumb position - drilling into a
+  // subfolder re-scopes File Types/Top Files/Top Folders/Timeline to
+  // it. Only recomputed on navigation.
+  const analysis = useMemo(() => analyzeTree(currentNode), [currentNode]);
+  const topFilesData = isReal ? analysis.topFiles : folderLargestFiles;
+  // Pre-scan fallback matches this tab's original (already tree-
+  // derived, never a fixed mock array) behavior exactly: direct
+  // children only, sorted by size. Once real, this upgrades to a
+  // true recursive top-folders-anywhere-in-scope list.
+  const topFoldersData = isReal
+    ? analysis.topFolders
+    : [...(currentNode.children ?? [])]
+        .sort((a, b) => b.size - a.size)
+        .map((c) => ({ path: c.path, size: c.size }));
+  const fileTypeStats = isReal ? analysis.categoryStats : folderFileTypeStats;
+  const timelineData = isReal ? analysis.timeline : diskTimeline;
+  const sizeDistribution = isReal
+    ? topChildrenWithOthers(currentNode.children ?? [], 3)
+    : folderSizeDistribution;
 
   function drillInto(node: FsNode) {
     setBreadcrumb((b) => [...b, node]);
@@ -92,7 +147,7 @@ export function FolderAnalysisPage() {
 
   function startScan() {
     setStatusText(`Scanning ${location}...`);
-    scan.start(3);
+    void realScan.start(location, DEFAULT_SCAN_OPTIONS);
     void browse(location);
   }
 
@@ -143,7 +198,7 @@ export function FolderAnalysisPage() {
         </div>
       ),
     },
-    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified, render: (n) => formatDate(n.lastModified) },
+    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified ?? "", render: (n) => formatDate(n.lastModified) },
   ];
 
   return (
@@ -154,10 +209,38 @@ export function FolderAnalysisPage() {
         <Card title="Select Folder" className="flex-1">
           <div className="flex flex-col gap-2.5">
             <LocationPicker value={location} onChange={setLocation} />
-            <Button variant="primary" icon={ScanSearch} onClick={startScan} disabled={scan.status === "running"} className="self-start">
-              {scan.status === "running" ? `Scanning... ${scan.progress.toFixed(0)}%` : "Scan"}
-            </Button>
-            {scan.status === "running" && <ProgressBar value={scan.progress} tone="accent" />}
+            {/* Kept to exactly two rows (LocationPicker + this one, plus
+                the progress bar only while actively scanning) regardless
+                of scan state - folding the completed summary in here
+                rather than a separate paragraph avoids regrowing this
+                already-crowded card's height and squeezing the treemap
+                row below it (see PHASE2.md's identical layout-overflow
+                note about this exact card). */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="primary"
+                icon={ScanSearch}
+                onClick={startScan}
+                disabled={realScan.status === "scanning"}
+                className="self-start"
+              >
+                {realScan.status === "scanning"
+                  ? `Scanning... ${formatNumber(realScan.progress?.scannedFiles ?? 0)} files`
+                  : "Scan"}
+              </Button>
+              {realScan.status === "scanning" && (
+                <Button variant="secondary" onClick={() => void realScan.cancel()} className="self-start">
+                  Cancel
+                </Button>
+              )}
+              {realScan.status === "completed" && realScan.result && (
+                <span className="text-[11.5px] text-fg-muted">
+                  {formatBytes(realScan.result.root.size)} · {formatNumber(realScan.result.root.fileCount)} files ·{" "}
+                  {formatNumber(realScan.result.root.folderCount)} folders
+                </span>
+              )}
+            </div>
+            {realScan.status === "scanning" && <ProgressBar indeterminate tone="accent" />}
 
             <div className="mt-1 flex flex-col gap-1.5 border-t border-border pt-2">
               <PathBreadcrumb
@@ -212,10 +295,13 @@ export function FolderAnalysisPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
-        <DemoBadge />
+        {/* Real duplicate detection is Phase 5's job, so Duplicates stays badged regardless. */}
+        {(!isReal || tab === "duplicates") && <DemoBadge />}
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
+      {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx -
+          same shared layout bug, same fix. */}
+      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "treemap" && (
             <>
@@ -225,7 +311,7 @@ export function FolderAnalysisPage() {
           )}
           {tab === "chart" && (
             <BarChartPanel
-              data={(currentNode.children ?? []).map((c) => ({ name: c.name, size: c.size }))}
+              data={topFoldersData.map((f) => ({ name: f.path.split("\\").pop(), size: f.size }))}
               categoryKey="name"
               series={[{ key: "size", label: "Size", color: "var(--color-chart-3)" }]}
               height={360}
@@ -233,12 +319,12 @@ export function FolderAnalysisPage() {
           )}
           {tab === "file-types" && (
             <div className="flex h-full items-center justify-center">
-              <DonutChart data={folderFileTypeStats} centerLabel="Selected Folder" centerValue={formatBytes(currentNode.size)} size={180} />
+              <DonutChart data={fileTypeStats} centerLabel="Selected Folder" centerValue={formatBytes(currentNode.size)} size={180} />
             </div>
           )}
           {tab === "top-files" && (
             <div className="flex flex-col gap-1.5 overflow-y-auto">
-              {folderLargestFiles.map((f, i) => (
+              {topFilesData.map((f, i) => (
                 <div key={f.name + i} className="flex items-center gap-3 rounded-md border border-border bg-surface-alt px-3 py-2">
                   <span className="w-5 text-fg-subtle">#{i + 1}</span>
                   <File size={14} className="text-fg-subtle" />
@@ -253,21 +339,19 @@ export function FolderAnalysisPage() {
           )}
           {tab === "top-folders" && (
             <div className="flex flex-col gap-1.5 overflow-y-auto">
-              {[...(currentNode.children ?? [])]
-                .sort((a, b) => b.size - a.size)
-                .map((f, i) => (
-                  <div key={f.id} className="flex items-center gap-3 rounded-md border border-border bg-surface-alt px-3 py-2">
-                    <span className="w-5 text-fg-subtle">#{i + 1}</span>
-                    <Folder size={14} className="text-warning" />
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{f.path}</span>
-                    <span className="shrink-0 text-[12.5px] font-medium text-fg">{formatBytes(f.size)}</span>
-                  </div>
-                ))}
+              {topFoldersData.map((f, i) => (
+                <div key={f.path} className="flex items-center gap-3 rounded-md border border-border bg-surface-alt px-3 py-2">
+                  <span className="w-5 text-fg-subtle">#{i + 1}</span>
+                  <Folder size={14} className="text-warning" />
+                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-fg">{f.path}</span>
+                  <span className="shrink-0 text-[12.5px] font-medium text-fg">{formatBytes(f.size)}</span>
+                </div>
+              ))}
             </div>
           )}
           {tab === "timeline" && (
             <BarChartPanel
-              data={diskTimeline}
+              data={timelineData}
               categoryKey="label"
               series={[{ key: "size", label: "Size modified", color: "var(--color-chart-5)" }]}
               height={360}
@@ -292,7 +376,10 @@ export function FolderAnalysisPage() {
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
-          <Card title="Browse (Real)" padded={false} bodyClassName="h-[160px] p-2">
+          {/* flex-none: cancels Card's default flex-1 (flex-basis:0%),
+              which otherwise beats this fixed height in a flex-col layout
+              - see the comment above the treemap/sidebar grid. */}
+          <Card title="Browse (Real)" padded={false} bodyClassName="h-[160px] p-2 flex-none">
             <DirectoryTree
               rootPath={currentPath ?? location}
               selectedPath={currentPath}
@@ -304,19 +391,19 @@ export function FolderAnalysisPage() {
             />
           </Card>
           <FolderDetailsCard node={selectedNode ?? currentNode} />
-          <Card title="Size Distribution" action={<DemoBadge />}>
-            <DonutChart data={folderSizeDistribution} centerLabel="Distribution" centerValue={formatBytes(currentNode.size)} size={120} />
+          <Card title="Size Distribution" action={!isReal && <DemoBadge />}>
+            <DonutChart data={sizeDistribution} centerLabel="Distribution" centerValue={formatBytes(currentNode.size)} size={120} />
           </Card>
-          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3" action={<DemoBadge />}>
-            {folderFileTypeStats.map((s) => (
+          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3" action={!isReal && <DemoBadge />}>
+            {fileTypeStats.map((s) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="text-fg-muted">{s.label}</span>
                 <span className="text-fg">{formatBytes(s.value)} ({formatPercent(s.percent)})</span>
               </div>
             ))}
           </Card>
-          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3" action={<DemoBadge />}>
-            {folderLargestFiles.slice(0, 10).map((f, i) => (
+          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3" action={!isReal && <DemoBadge />}>
+            {topFilesData.slice(0, 10).map((f, i) => (
               <div key={f.name + i} className="flex items-center justify-between gap-2 text-[12px]">
                 <span className="min-w-0 flex-1 truncate text-fg-muted">
                   {i + 1}. {f.name}
@@ -328,7 +415,7 @@ export function FolderAnalysisPage() {
         </div>
       </div>
 
-      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px]" action={<DemoBadge />}>
+      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px] flex-none" action={!isReal && <DemoBadge />}>
         <DataTable
           columns={columns}
           rows={visibleRows.map((r) => r.node)}

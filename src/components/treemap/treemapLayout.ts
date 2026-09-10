@@ -82,7 +82,16 @@ export function squarify<T>(items: WeightedItem<T>[], x: number, y: number, w: n
         break;
       }
     }
-    const horizontal = rw >= rh;
+    // A row is always built along the *shorter* side (that's what keeps
+    // tiles square - see `shortSide` above): a wide remaining rect gets
+    // a narrow full-height *column* (`horizontal: false`, width shared
+    // out along rh), a tall one gets a full-width *strip*
+    // (`horizontal: true`, height shared out along rw). Getting this
+    // backwards (`rw >= rh` here) still produces a technically-valid
+    // layout, but for the landscape containers this app always renders
+    // into, every row ends up alone and full-width - a stack of thin
+    // horizontal bars instead of tiles actually sitting side by side.
+    const horizontal = rh > rw;
     const rowAreaSum = row.reduce((s, r) => s + r.area, 0);
     if (horizontal) {
       const rowHeight = rw > 0 ? rowAreaSum / rw : 0;
