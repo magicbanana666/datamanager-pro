@@ -245,6 +245,133 @@ since `tauri-driver`/CDP weren't set up in this session):
 - No panics, no permission errors, no stray console errors observed
   throughout.
 
+## Performance: Bulk $MFT Read
+
+The directory-index MFT engine described above (one `directory_index()`
+B+tree lookup per folder) is already far faster than the walk engine,
+but a live side-by-side against WizTree on this machine's real `C:\`
+(~1M files) showed a real gap worth closing: **90-133s here vs.
+WizTree's ~3.67s**. Two rounds of investigation followed, both
+validated directly via `cargo test -- --ignored --nocapture` against
+real local folders/drives rather than the slow UI-click verification
+loop used elsewhere in this doc - see `src-tauri/src/platform/windows/mft.rs`'s
+`bulk_mft_tests` module for the tests themselves (all `#[ignore]`-gated
+since they need an elevated/backup-privileged shell and touch a real
+volume).
+
+**Attempt 1 (reverted): sequential per-record `Ntfs::file()` calls.**
+The theory was that reading the ~750K-900K File Records in raw
+record-number order would be faster than following live directory
+structure. It was dramatically *slower* instead (8+ minutes, didn't
+finish) - `Ntfs::file()` re-derives the `$MFT`'s own `$DATA` run list
+on *every call* (see its doc comment in the `ntfs` crate source), and
+calling it once per *record* rather than once per *folder* multiplied
+that redundant work by roughly the file-to-folder ratio. Reverted live
+back to the directory-index engine; see `mft.rs`'s top doc comment for
+the full postmortem, preserved there since it explains why the
+*next* attempt had to avoid `Ntfs::file()` entirely.
+
+**Attempt 2 (shipped): one bulk read of the whole `$MFT`, parsed by
+hand from an in-memory buffer.** `bulk_scan_via_mft` (same file) reads
+the entire `$MFT` data stream in a single `NtfsReadSeek::read_exact`
+call - the *only* per-scan use of `Ntfs::file()` this path makes - then
+hand-parses every fixed-size File Record directly out of that buffer:
+the Update Sequence Array fixup, the attribute list, `$FILE_NAME`, and
+(new territory beyond what the directory-index engine needs) the
+record header's `base_file_record` field and `$ATTRIBUTE_LIST`
+entries. No further disk I/O after the one bulk read - this is the
+same overall approach WizTree itself is understood to use.
+
+Three real correctness bugs turned up building this, each confirmed via
+a live scan before being fixed - noted here since the fixes are exactly
+what makes hand-parsing raw MFT bytes trustworthy instead of merely
+fast:
+
+1. **Extension-record identity.** When a heavily hard-linked
+   file/folder's attributes don't fit one File Record (WinSxS and the
+   Driver Store are full of this), NTFS moves some into a separate
+   *extension* record referenced via `$ATTRIBUTE_LIST`. An extension
+   record has its own record number but no identity as a *parent* -
+   every child's parent reference always names the *base* record. Using
+   the extension record's own number as "this folder's identity" made
+   every one of its real children invisible (found live: several
+   WinSxS driver-package folders showing 0 children when a live listing
+   showed 3). Fixed by reading `base_file_record` from every record's
+   header and keying by that instead when it's non-zero.
+2. **Stale `$FILE_NAME`-cached size.** `$FILE_NAME`'s cached
+   `data_size`/`allocated_size` fields are only guaranteed in sync
+   "when the file name changes" (per the `ntfs` crate's own doc
+   comments) - confirmed live that a meaningful number of real system
+   files (`msedge.dll` at 263 MB, among others) have this cached value
+   genuinely zeroed in their own record, even though the *parent
+   directory's index* copy of the same structure (what the
+   directory-index engine reads instead) is correct. Fixed by reading
+   the authoritative size from the record's own `$DATA` attribute
+   instead (resident value length, or the non-resident header's
+   `data_size`/`allocated_size` fields - present directly in the
+   record, no data-run resolution needed).
+3. **`$DATA` itself can be relocated too.** For a large enough/heavily
+   fragmented file (confirmed live: an actively-growing registry hive,
+   `C:\Windows\System32\config\SOFTWARE`), even `$DATA` doesn't fit in
+   the base record and gets moved to extension record(s) via
+   `$ATTRIBUTE_LIST`. Fixed with a second pass: any record whose
+   `$DATA` wasn't found directly is resolved by jumping straight to the
+   extension record(s) named in its (resident) `$ATTRIBUTE_LIST` -
+   every record is already fixed-up in memory by then, so this second
+   pass is pure in-memory lookups, no extra I/O.
+4. **Reconciling the two legitimate sizes.** Bug 2's fix (always
+   trusting `$DATA`) turned out to have its own failure mode: OneDrive
+   "Files On-Demand" cloud placeholders (multi-GB files not yet
+   materialized locally) have a correct, full-size `$FILE_NAME` cache
+   but a `$DATA` attribute reporting ~0 (nothing local yet) - the exact
+   opposite staleness direction. Final fix takes `max()` of the two
+   values per file: understating a real file as 0 bytes is a far worse
+   failure mode for a disk-usage tool than occasionally overstating a
+   since-shrunk file with a stale-but-larger cached value.
+
+**Validated live**, each cross-checked against the existing
+directory-index engine on the same target:
+
+| Target | Files/Folders | Bulk | Directory-index | Speedup |
+|---|---|---|---|---|
+| `C:\Windows\WinSxS` | ~121K / ~66K | ~13-17s | ~78-88s | ~5-7x |
+| `C:\Windows` | ~178K / ~77K | ~13-17s | ~78-97s | ~5-9x |
+| `C:\` (whole drive) | ~1.04M / ~170K | **~19s** | ~174s | **~9x** |
+
+`C:\`'s ~19s is now within ~5x of WizTree's ~3.67s on the same
+machine, down from the original ~25-36x gap - a large, real
+improvement, even if not fully at parity. File/folder counts and total
+bytes matched the directory-index engine within live-filesystem noise
+on every target (confirmed via two back-to-back bulk-only runs of the
+same target too, `bulk_mft_self_consistency`: **0** file/folder count
+difference and a sub-0.0001% byte difference, proving the bulk parser
+itself is deterministic - the count differences seen against the
+*much slower* comparison scans, especially on `C:\` where the
+directory-index run alone takes ~174s, are genuine churn on an
+actively-synced machine, not a parsing bug).
+
+**Bulk read has a mostly-fixed cost, unlike the directory-index
+engine.** It reads the *entire* `$MFT` regardless of how small the
+target folder is (confirmed live: a ~560-file `C:\Windows\Fonts`
+subfolder took the same ~16s the whole-drive read costs, against the
+directory-index engine's ~0.17s there) - because scanning it means
+parsing one record at a time out of a buffer that's already fully in
+memory, whereas the directory-index engine's cost scales with how many
+folders are actually in the target. So `try_mft_scan` **dispatches**:
+a bare drive root (`C:\`) goes to `bulk_scan_via_mft`; anything
+narrower (the common Folder Analysis case) keeps using the
+directory-index engine, where it's the clear winner instead.
+
+**Known remaining gap**: a *non-resident* `$ATTRIBUTE_LIST` (only when
+even the attribute list itself doesn't fit resident - confirmed live
+on exactly one file across a full `C:\` scan, `MRT.exe`) isn't
+followed; such a record falls back to whatever `$FILE_NAME` has
+cached, which can still be 0 in the rare case both are stale for the
+same record. Resolving this would need volume data-run resolution for
+the attribute list's own value, reintroducing per-record I/O for a
+narrow enough case that it wasn't judged worth trading the bulk read's
+"one I/O for the whole scan" property for.
+
 ## Known Limitations
 
 - **MFT engine needs admin/backup privilege** to open a raw volume
@@ -275,6 +402,10 @@ since `tauri-driver`/CDP weren't set up in this session):
   single active session (matching `filesystemStore`'s "one browse
   session" convention); the backend itself can track multiple
   concurrent scans by id if a later phase needs that.
+- **A non-resident `$ATTRIBUTE_LIST`** on the bulk-read engine isn't
+  followed (see "Performance: Bulk $MFT Read" above) - narrow (one file
+  in a full live `C:\` scan) but real; such a file can show a stale
+  cached size instead of its true one.
 
 ## Safety Guarantee
 
