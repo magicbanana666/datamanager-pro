@@ -332,23 +332,53 @@ fast:
 **Validated live**, each cross-checked against the existing
 directory-index engine on the same target:
 
-| Target | Files/Folders | Bulk | Directory-index | Speedup |
+| Target | Files/Folders | Bulk (debug) | Directory-index | Speedup |
 |---|---|---|---|---|
 | `C:\Windows\WinSxS` | ~121K / ~66K | ~13-17s | ~78-88s | ~5-7x |
 | `C:\Windows` | ~178K / ~77K | ~13-17s | ~78-97s | ~5-9x |
-| `C:\` (whole drive) | ~1.04M / ~170K | **~19s** | ~174s | **~9x** |
+| `C:\` (whole drive) | ~1.04M / ~170K | ~19s | ~174s | ~9x |
 
-`C:\`'s ~19s is now within ~5x of WizTree's ~3.67s on the same
-machine, down from the original ~25-36x gap - a large, real
-improvement, even if not fully at parity. File/folder counts and total
-bytes matched the directory-index engine within live-filesystem noise
-on every target (confirmed via two back-to-back bulk-only runs of the
-same target too, `bulk_mft_self_consistency`: **0** file/folder count
-difference and a sub-0.0001% byte difference, proving the bulk parser
-itself is deterministic - the count differences seen against the
-*much slower* comparison scans, especially on `C:\` where the
-directory-index run alone takes ~174s, are genuine churn on an
-actively-synced machine, not a parsing bug).
+File/folder counts and total bytes matched the directory-index engine
+within live-filesystem noise on every target (confirmed via two
+back-to-back bulk-only runs of the same target too,
+`bulk_mft_self_consistency`: **0** file/folder count difference and a
+sub-0.0001% byte difference, proving the bulk parser itself is
+deterministic - the count differences seen against the *much slower*
+comparison scans, especially on `C:\` where the directory-index run
+alone takes ~174s, are genuine churn on an actively-synced machine, not
+a parsing bug).
+
+**The table above was measured with `cargo test` (debug, unoptimized) -
+misleadingly pessimistic**, since that's not what actually ships (Tauri
+always builds the real app in release mode). Re-measured with
+`cargo test --release`, `C:\`'s per-run breakdown dropped from ~19s to
+**~4.5-6.5s** (varies with OS filesystem cache state for the ~1.2 GB
+`$MFT` read) - within **~1.2-1.8x of WizTree's ~3.67s**, not ~5x.
+Two further changes closed most of that remaining gap once the debug/
+release mismatch itself was found and this session kept pushing (both
+confirmed live, correctness re-checked after each: WinSxS's bulk-vs-
+directory-index counts/bytes still matched within the same noise
+margin as before):
+
+- **Parallelized `bulk_parse_mft`'s pass 1** (rayon, already a
+  dependency for the walk engine) - each record's fixup+parse is fully
+  independent of every other, so this maps every record in parallel
+  into small owned results, merged into the shared maps in one cheap
+  sequential pass afterwards. This was the single biggest CPU-bound
+  cost in the whole bulk path (measured in isolation: ~15-16s of the
+  ~19s *debug* total was this one step).
+- **Parallelized `build_node_from_map`'s recursion** - a directory's
+  children are independent of its siblings once the in-memory
+  parent-child map exists, so building them (including recursing into
+  subdirectories) runs via rayon's `par_iter` instead of a sequential
+  loop. Measured on its own: ~2.1-2.7s down to **~0.4-0.7s**.
+- A larger (4 MiB, vs. `BufReader`'s 8 KiB default) read buffer
+  specifically for the bulk path's one long sequential `$MFT` read -
+  a smaller, secondary win alongside the two above.
+
+12 logical cores were available on the machine this was measured on;
+the speedup from parallelizing will scale with core count, same as the
+walk engine's own rayon-based parallelism already does.
 
 **Bulk read has a mostly-fixed cost, unlike the directory-index
 engine.** It reads the *entire* `$MFT` regardless of how small the

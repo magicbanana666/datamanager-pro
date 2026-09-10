@@ -47,6 +47,7 @@ use crate::utils::time::system_time_to_iso8601;
 use ntfs::indexes::NtfsFileNameIndex;
 use ntfs::structured_values::{NtfsFileAttributeFlags, NtfsFileName, NtfsFileNamespace};
 use ntfs::{Ntfs, NtfsFile, NtfsReadSeek, NtfsTime};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{self, BufReader, Read, Seek, SeekFrom};
@@ -129,6 +130,12 @@ impl<R: Read + Seek> Seek for SectorReader<R> {
 /// safe multiple of every real-world Windows sector size (512 or
 /// 4096 bytes), matching the `ntfs` crate's own example.
 const VOLUME_SECTOR_SIZE: u64 = 4096;
+
+/// `BufReader` capacity used only by `bulk_scan_via_mft`'s one long
+/// sequential `$MFT` read - a multiple of `VOLUME_SECTOR_SIZE` so every
+/// refill stays sector-aligned. 4 MiB keeps syscall count low without
+/// holding an unreasonable amount of memory mid-read.
+const BULK_READ_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
 fn drive_letter_of(normalized: &str) -> Option<char> {
     let bytes = normalized.as_bytes();
@@ -537,6 +544,17 @@ fn parse_file_name_value(v: &[u8]) -> Option<RawFileName> {
     })
 }
 
+/// One record's contribution to `bulk_parse_mft`'s pass 1, tagged with
+/// its resolved owner (true base-record) number - the `Send`-able unit
+/// each parallel record-parsing task in that pass produces, merged into
+/// the shared maps afterwards in a plain sequential loop.
+struct RecordResult {
+    owner_record_number: u64,
+    direct_data: Option<(u64, u64)>,
+    external_data_refs: Vec<u64>,
+    file_names: Vec<RawFileName>,
+}
+
 /// Everything `bulk_parse_mft`'s single attribute-list walk over one
 /// record can determine about it in isolation - some of it (`external_data_refs`)
 /// needs a second pass over *other* records before it can be resolved.
@@ -831,38 +849,66 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
     // Pass 1: fixup every record once, collect $FILE_NAMEs (grouped by
     // parent, tagged with their owning record's true base-record
     // number), and every record's own $DATA size when directly present.
-    for (i, record) in data.chunks_exact_mut(record_size).enumerate() {
-        if apply_fixup(record).is_none() {
-            continue;
-        }
+    //
+    // Each record's fixup+parse is fully independent of every other -
+    // the only shared state is the three maps being built, so this runs
+    // in parallel across records (`rayon`, already a dependency for the
+    // walk engine) and merges into those maps in a cheap sequential pass
+    // afterwards. Confirmed live this is where nearly all of this
+    // function's time goes (per-record byte parsing over ~1M+ records
+    // on a full `C:\`, not I/O) - see PHASE3.md's bulk-$MFT-read
+    // section for the before/after numbers.
+    let per_record_results: Vec<RecordResult> = data
+        .par_chunks_exact_mut(record_size)
+        .enumerate()
+        .filter_map(|(i, record)| {
+            apply_fixup(record)?;
 
-        let base_file_reference = u64::from_le_bytes(
-            record[BASE_FILE_RECORD_OFFSET..BASE_FILE_RECORD_OFFSET + 8]
-                .try_into()
-                .unwrap(),
-        );
-        let base_record_number = base_file_reference & 0xffff_ffff_ffff;
-        let owner_record_number = if base_record_number == 0 {
-            i as u64
-        } else {
-            base_record_number
-        };
+            let base_file_reference = u64::from_le_bytes(
+                record[BASE_FILE_RECORD_OFFSET..BASE_FILE_RECORD_OFFSET + 8]
+                    .try_into()
+                    .unwrap(),
+            );
+            let base_record_number = base_file_reference & 0xffff_ffff_ffff;
+            let owner_record_number = if base_record_number == 0 {
+                i as u64
+            } else {
+                base_record_number
+            };
 
-        let parsed = parse_record(record);
-        if let Some(sz) = parsed.direct_data {
-            authoritative_sizes.entry(owner_record_number).or_insert(sz);
+            let parsed = parse_record(record);
+            if parsed.direct_data.is_none()
+                && parsed.external_data_refs.is_empty()
+                && parsed.file_names.is_empty()
+            {
+                return None;
+            }
+            Some(RecordResult {
+                owner_record_number,
+                direct_data: parsed.direct_data,
+                external_data_refs: parsed.external_data_refs,
+                file_names: parsed.file_names,
+            })
+        })
+        .collect();
+
+    for r in per_record_results {
+        if let Some(sz) = r.direct_data {
+            authoritative_sizes
+                .entry(r.owner_record_number)
+                .or_insert(sz);
         }
-        if !parsed.external_data_refs.is_empty() {
+        if !r.external_data_refs.is_empty() {
             pending_data_lookup
-                .entry(owner_record_number)
+                .entry(r.owner_record_number)
                 .or_default()
-                .extend(parsed.external_data_refs);
+                .extend(r.external_data_refs);
         }
-        for fname in parsed.file_names {
+        for fname in r.file_names {
             children_by_parent
                 .entry(fname.parent_record_number)
                 .or_default()
-                .push((owner_record_number, fname));
+                .push((r.owner_record_number, fname));
         }
     }
 
@@ -953,49 +999,59 @@ fn build_node_from_map(
     }
     state.set_current_path(&path);
 
-    let mut children: Vec<FsNode> = Vec::new();
-    if let Some(entries) = map.get(&record_number) {
-        for (child_record_number, fname) in entries {
-            if (fname.is_hidden && !options.show_hidden)
-                || (fname.is_system && !options.show_system)
-            {
-                continue;
-            }
-            let child_path = format!("{path}\\{}", fname.name);
-
-            if fname.is_directory {
-                let mut node = build_node_from_map(
-                    *child_record_number,
-                    child_path,
-                    fname.name.clone(),
-                    map,
-                    options,
-                    state,
-                    depth + 1,
-                );
-                node.last_modified = fname.last_modified.clone();
-                state.folders.fetch_add(1, Ordering::Relaxed);
-                children.push(node);
-            } else {
-                state.files.fetch_add(1, Ordering::Relaxed);
-                state.bytes.fetch_add(fname.size, Ordering::Relaxed);
-                children.push(FsNode {
-                    id: child_path.clone(),
-                    name: fname.name.clone(),
-                    path: child_path,
-                    kind: NodeKind::File,
-                    size: fname.size,
-                    allocated: fname.allocated,
-                    file_count: 0,
-                    folder_count: 0,
-                    percent_of_parent: 0.0,
-                    last_modified: fname.last_modified.clone(),
-                    category: None,
-                    children: None,
-                });
-            }
-        }
-    }
+    // Every child is independent of its siblings (a directory child's
+    // own recursive call only ever reads `map`, never touches another
+    // sibling's output) - `state`'s counters are already atomics for
+    // exactly this reason (the walk engine's rayon-parallel recursion
+    // needs the same thing). Parallelizing here, not just in
+    // `bulk_parse_mft`'s pass 1, is what let a real full `C:\` scan's
+    // wall-clock time actually benefit from this machine's cores rather
+    // than just its (already fast) record-parsing step - confirmed live,
+    // see PHASE3.md.
+    let mut children: Vec<FsNode> = match map.get(&record_number) {
+        Some(entries) => entries
+            .par_iter()
+            .filter(|(_, fname)| {
+                !((fname.is_hidden && !options.show_hidden)
+                    || (fname.is_system && !options.show_system))
+            })
+            .map(|(child_record_number, fname)| {
+                let child_path = format!("{path}\\{}", fname.name);
+                if fname.is_directory {
+                    let mut node = build_node_from_map(
+                        *child_record_number,
+                        child_path,
+                        fname.name.clone(),
+                        map,
+                        options,
+                        state,
+                        depth + 1,
+                    );
+                    node.last_modified = fname.last_modified.clone();
+                    state.folders.fetch_add(1, Ordering::Relaxed);
+                    node
+                } else {
+                    state.files.fetch_add(1, Ordering::Relaxed);
+                    state.bytes.fetch_add(fname.size, Ordering::Relaxed);
+                    FsNode {
+                        id: child_path.clone(),
+                        name: fname.name.clone(),
+                        path: child_path,
+                        kind: NodeKind::File,
+                        size: fname.size,
+                        allocated: fname.allocated,
+                        file_count: 0,
+                        folder_count: 0,
+                        percent_of_parent: 0.0,
+                        last_modified: fname.last_modified.clone(),
+                        category: None,
+                        children: None,
+                    }
+                }
+            })
+            .collect(),
+        None => Vec::new(),
+    };
 
     let total_size: u64 = children.iter().map(|c| c.size).sum();
     let total_allocated: u64 = children.iter().map(|c| c.allocated).sum();
@@ -1062,7 +1118,12 @@ pub fn bulk_scan_via_mft(
     let file = File::open(&volume_path)
         .map_err(|e| format!("cannot open raw volume {volume_path}: {e}"))?;
     let sector_reader = SectorReader::new(file, VOLUME_SECTOR_SIZE);
-    let mut fs = BufReader::new(sector_reader);
+    // A much bigger buffer than the small-scattered-lookup `walk_index_scan`
+    // needs: this path's one long sequential read (`bulk_read_mft_data`,
+    // below) benefits directly - each `BufReader` refill becomes one big
+    // aligned read through `SectorReader` instead of many small ones,
+    // cutting the read's own syscall count roughly proportionally.
+    let mut fs = BufReader::with_capacity(BULK_READ_BUFFER_SIZE, sector_reader);
 
     let mut ntfs = Ntfs::new(&mut fs).map_err(|e| e.to_string())?;
     ntfs.read_upcase_table(&mut fs).map_err(|e| e.to_string())?;
@@ -1096,7 +1157,6 @@ pub fn bulk_scan_via_mft(
     let mut data = bulk_read_mft_data(&ntfs, &mut fs)?;
     let file_record_size = ntfs.file_record_size();
     let map = bulk_parse_mft(&mut data, file_record_size);
-
     let mut root = build_node_from_map(record_number, normalized, name, &map, &options, state, 0);
     root.last_modified = root_modified;
     Ok(root)
