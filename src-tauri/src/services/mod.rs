@@ -3,6 +3,7 @@
 //! marshalling + `spawn_blocking`); the actual read-only I/O logic
 //! lives here so it stays independently testable.
 
+pub mod duplicate_service;
 pub mod filesystem_service;
 pub mod path_service;
 pub mod scan_analysis_service;

@@ -48,3 +48,7 @@ pub fn try_mft_scan(
 ) -> Result<FsNode, String> {
     Err("MFT scanning is only implemented for Windows".to_string())
 }
+
+pub fn file_identity(_file: &std::fs::File) -> Option<(u32, u64)> {
+    None
+}

@@ -17,6 +17,7 @@ mod platform;
 mod services;
 mod utils;
 
+use commands::duplicates::{cancel_duplicate_scan, start_duplicate_scan, DuplicateRegistry};
 use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
@@ -43,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(ScanRegistry::default())
         .manage(ScanTreeCache::default())
+        .manage(DuplicateRegistry::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             get_system_info,
@@ -57,6 +59,8 @@ pub fn run() {
             cancel_scan,
             get_subtree,
             analyze_subtree,
+            start_duplicate_scan,
+            cancel_duplicate_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

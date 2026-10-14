@@ -5,7 +5,7 @@ function mb(n: number): number {
   return Math.round(n * 1024 * 1024);
 }
 
-export const duplicateGroups: DuplicateGroup[] = [
+const rawGroups: Omit<DuplicateGroup, "wastedBytes">[] = [
   {
     id: "g1",
     label: "IMG_20240612_1452.jpg",
@@ -69,6 +69,12 @@ export const duplicateGroups: DuplicateGroup[] = [
     ],
   },
 ];
+
+// Every mock copy in a group has the group's size, so all but one is waste.
+export const duplicateGroups: DuplicateGroup[] = rawGroups.map((g) => ({
+  ...g,
+  wastedBytes: g.size * (g.files.length - 1),
+}));
 
 export const duplicateFileTypeStats: CategoryStat[] = [
   { label: "Images", value: mb(6358), percent: 34.2, colorIndex: 3 },

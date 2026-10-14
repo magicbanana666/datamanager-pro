@@ -26,7 +26,8 @@ use std::path::Path;
 use windows::core::PCWSTR;
 use windows::Win32::Storage::FileSystem::{
     GetCompressedFileSizeW, GetDiskFreeSpaceExW, GetDiskFreeSpaceW, GetDriveTypeW,
-    GetLogicalDrives, GetVolumeInformationW,
+    GetFileInformationByHandle, GetLogicalDrives, GetVolumeInformationW,
+    BY_HANDLE_FILE_INFORMATION,
 };
 
 // `windows` doesn't always export these as named constants (it depends
@@ -334,4 +335,18 @@ pub fn decode_attributes(metadata: &std::fs::Metadata) -> Vec<FileAttribute> {
         .filter(|(flag, _)| bits & flag != 0)
         .map(|(_, attr)| attr)
         .collect()
+}
+
+/// The physical identity of an open file - volume serial number plus
+/// NTFS file index - so two paths that are hard links to the same file
+/// (Windows links most of `System32` into `WinSxS`, for instance) can
+/// be told apart from two genuinely separate copies. `None` if the
+/// filesystem doesn't report one.
+pub fn file_identity(file: &std::fs::File) -> Option<(u32, u64)> {
+    use std::os::windows::io::AsRawHandle;
+    let mut info = BY_HANDLE_FILE_INFORMATION::default();
+    let handle = windows::Win32::Foundation::HANDLE(file.as_raw_handle());
+    unsafe { GetFileInformationByHandle(handle, &mut info) }.ok()?;
+    let index = ((info.nFileIndexHigh as u64) << 32) | info.nFileIndexLow as u64;
+    Some((info.dwVolumeSerialNumber, index))
 }
