@@ -1,6 +1,8 @@
-import { useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import clsx from "clsx";
 import { ArrowDown, ArrowUp } from "lucide-react";
+import { useElementSize } from "@/hooks/useElementSize";
+import { useSettingsStore } from "@/state/settingsStore";
 
 export interface DataTableColumn<T> {
   key: string;
@@ -27,6 +29,11 @@ interface DataTableProps<T> {
 }
 
 const DEFAULT_WIDTH = 140;
+/** Rows rendered beyond each edge of the visible area, so fast
+ * scrolling doesn't flash blank space before React catches up. */
+const OVERSCAN = 10;
+/** Used until `--row-h` is read from CSS (comfortable density's value). */
+const FALLBACK_ROW_HEIGHT = 34;
 
 export function DataTable<T>({
   columns,
@@ -87,8 +94,43 @@ export function DataTable<T>({
 
   const totalWidth = columns.reduce((s, c) => s + (colWidths[c.key] ?? DEFAULT_WIDTH), 0);
 
+  // Only the rows actually in view (plus `OVERSCAN` either side) are
+  // rendered, with spacer divs standing in for the rest - a real scan
+  // folder can have hundreds of children, and expanding a few of them
+  // in the Files & Folders tree otherwise mounts thousands of row
+  // elements at once. Every row is exactly `--row-h` tall, so the
+  // window is plain arithmetic, no per-row measuring.
+  const { ref: scrollRef, size } = useElementSize<HTMLDivElement>();
+  const [scrollTop, setScrollTop] = useState(0);
+  const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_HEIGHT);
+  const density = useSettingsStore((s) => s.settings.appearance.density);
+  useEffect(() => {
+    // `AppShell` applies `data-density` in its own effect, which runs
+    // after this (child) one - read `--row-h` on the next frame so it's
+    // the new value.
+    const frame = requestAnimationFrame(() => {
+      const el = scrollRef.current;
+      if (!el) return;
+      const value = parseFloat(getComputedStyle(el).getPropertyValue("--row-h"));
+      if (value > 0) setRowHeight(value);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [density, scrollRef]);
+
+  const windowStart = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
+  const windowEnd = Math.min(
+    sortedRows.length,
+    // Before the first measurement `size.height` is 0 - fall back to a
+    // generous window rather than rendering nothing.
+    windowStart + Math.ceil((size.height || 1200) / rowHeight) + 2 * OVERSCAN,
+  );
+
   return (
-    <div className={clsx("h-full overflow-auto rounded-md border border-border", className)}>
+    <div
+      ref={scrollRef}
+      onScroll={(e) => setScrollTop(e.currentTarget.scrollTop)}
+      className={clsx("h-full overflow-auto rounded-md border border-border", className)}
+    >
       <div style={{ minWidth: totalWidth }}>
         <div className="sticky top-0 z-10 flex border-b border-border bg-surface-alt">
           {columns.map((col) => {
@@ -134,7 +176,10 @@ export function DataTable<T>({
         {sortedRows.length === 0 ? (
           <div className="flex h-24 items-center justify-center text-xs text-fg-subtle">{emptyMessage}</div>
         ) : (
-          sortedRows.map((row) => {
+          <div style={{ height: windowStart * rowHeight }} />
+        )}
+        {sortedRows.length > 0 &&
+          sortedRows.slice(windowStart, windowEnd).map((row) => {
             const id = getRowId(row);
             const isSelected = id === selectedId;
             return (
@@ -165,8 +210,8 @@ export function DataTable<T>({
                 ))}
               </div>
             );
-          })
-        )}
+          })}
+        {windowEnd < sortedRows.length && <div style={{ height: (sortedRows.length - windowEnd) * rowHeight }} />}
       </div>
     </div>
   );

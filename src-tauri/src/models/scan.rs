@@ -104,6 +104,162 @@ pub struct FsNode {
     pub children: Option<Vec<FsNode>>,
 }
 
+/// Caps how many direct children a single folder carries in a
+/// *transport* payload (`scan-complete`/`get_subtree`), folding the
+/// smallest excess into one synthetic "Other (N items)" placeholder -
+/// the same "Other" philosophy `src/components/treemap/Treemap.tsx`'s
+/// own `bucketSmallest` uses for display.
+///
+/// Confirmed live this is a real problem, not a theoretical one: a
+/// full `C:\` scan has folders with tens of thousands of *direct*
+/// children (WinSxS alone has ~22,700), far past what anyone could
+/// usefully browse as a flat list, and shipping all of them helped
+/// freeze the webview for minutes.
+///
+/// Applied only when copying for transport (see
+/// [`truncate_for_transport`]), never to the cached full tree itself -
+/// so `analyze_subtree` still sees every file, including the ones
+/// folded away here. The placeholder keeps the folded children's real
+/// aggregate size/allocated/file_count/folder_count, so every total
+/// stays accurate; what it gives up is drill-down into the folded tail.
+pub const MAX_CHILDREN_PER_NODE: usize = 500;
+
+/// How many levels of folder `children` a transport payload keeps
+/// fully populated, counting the node passed to [`truncate_for_transport`]
+/// itself as level 0 - beyond that, a folder's `children` becomes
+/// `None` (its own `size`/`file_count`/`folder_count` stay the real,
+/// accurate aggregate either way - only the detailed per-child
+/// breakdown is dropped). `commands::scan::get_subtree` re-populates a
+/// specific folder's children on demand once the user actually drills
+/// into one that was truncated away.
+pub const TRANSPORT_DEPTH: u32 = 2;
+
+/// Builds a shallow copy of `node`'s subtree for sending over IPC,
+/// bounded by depth (`depth_remaining`) and by breadth
+/// ([`MAX_CHILDREN_PER_NODE`]). Confirmed live both bounds are needed
+/// for a full `C:\` scan: breadth capping alone still left a
+/// ~1.2M-node, ~380 MB `scan-complete` payload (most of that tree's
+/// size comes from *depth* - real files nested many folders deep - not
+/// from a handful of pathologically wide folders) that froze the
+/// webview for minutes trying to receive and parse it.
+///
+/// Only clones what actually goes into the result - the full subtree
+/// stays behind, untouched, in whatever `FsNode` this was called on,
+/// typically the cached full tree `get_subtree` looks up from.
+pub fn truncate_for_transport(node: &FsNode, depth_remaining: u32) -> FsNode {
+    let children = if node.kind != NodeKind::Folder || depth_remaining == 0 {
+        None
+    } else {
+        node.children.as_ref().map(|kids| {
+            if kids.len() <= MAX_CHILDREN_PER_NODE {
+                return kids
+                    .iter()
+                    .map(|c| truncate_for_transport(c, depth_remaining - 1))
+                    .collect();
+            }
+            // Largest-first, so what gets folded away is always the
+            // smallest, least individually-interesting tail.
+            let mut sorted: Vec<&FsNode> = kids.iter().collect();
+            sorted.sort_unstable_by_key(|c| std::cmp::Reverse(c.size));
+            let (kept, folded) = sorted.split_at(MAX_CHILDREN_PER_NODE - 1);
+            let mut out: Vec<FsNode> = kept
+                .iter()
+                .map(|c| truncate_for_transport(c, depth_remaining - 1))
+                .collect();
+            out.push(other_placeholder(folded, node.size));
+            out
+        })
+    };
+    FsNode {
+        id: node.id.clone(),
+        name: node.name.clone(),
+        path: node.path.clone(),
+        kind: node.kind,
+        size: node.size,
+        allocated: node.allocated,
+        file_count: node.file_count,
+        folder_count: node.folder_count,
+        percent_of_parent: node.percent_of_parent,
+        last_modified: node.last_modified.clone(),
+        category: node.category.clone(),
+        children,
+    }
+}
+
+/// The synthetic "Other (N items)" node standing in for `folded` (never
+/// empty - only called once a folder is past the cap). Its id ends in
+/// `::other`, which the frontend's `needsChildren` uses to know there's
+/// nothing to fetch for it.
+fn other_placeholder(folded: &[&FsNode], parent_size: u64) -> FsNode {
+    let mut size = 0u64;
+    let mut allocated = 0u64;
+    let mut file_count = 0u64;
+    let mut folder_count = 0u64;
+    for c in folded {
+        size += c.size;
+        allocated += c.allocated;
+        if c.kind == NodeKind::File {
+            file_count += 1;
+        } else {
+            file_count += c.file_count;
+            folder_count += 1 + c.folder_count;
+        }
+    }
+    let sample_path = folded[0].path.clone();
+    FsNode {
+        id: format!("{sample_path}::other"),
+        name: format!("Other ({} items)", folded.len()),
+        path: sample_path,
+        kind: NodeKind::Folder,
+        size,
+        allocated,
+        file_count,
+        folder_count,
+        percent_of_parent: if parent_size > 0 {
+            (size as f64 / parent_size as f64) * 100.0
+        } else {
+            0.0
+        },
+        last_modified: None,
+        category: None,
+        children: None,
+    }
+}
+
+/// Finds the node at `target_path` within `root`'s subtree (`root`
+/// itself included) by exact `path` match, recursing only into
+/// folders - used by `commands::scan::get_subtree` to look a
+/// previously-truncated folder back up in the cached full tree. `None`
+/// covers both "no such path in this scan" and "that path was itself
+/// folded into a transport-only `Other (N items)` placeholder"
+/// (which has no `children` to search) - both are reported to the
+/// frontend the same way, as "can't be expanded any further".
+pub fn find_node<'a>(root: &'a FsNode, target_path: &str) -> Option<&'a FsNode> {
+    if root.path == target_path {
+        return Some(root);
+    }
+    if root.kind != NodeKind::Folder {
+        return None;
+    }
+    // Prune by path prefix rather than searching every sibling
+    // subtree: `target_path` can only live under the one child whose
+    // own path is a proper prefix of it, followed by a path
+    // separator - keeps this O(depth), not O(tree size), even against
+    // the cached full tree of a whole-drive scan.
+    for child in root.children.as_deref().unwrap_or(&[]) {
+        // The child can be the target itself, not only an ancestor
+        // of it.
+        if child.path == target_path
+            || (target_path.len() > child.path.len()
+                && target_path.as_bytes()[child.path.len()] == b'\\'
+                && target_path.starts_with(&child.path))
+        {
+            return find_node(child, target_path);
+        }
+    }
+    None
+}
+
 /// Shared, non-serialized runtime state for one in-progress scan -
 /// deliberately kept in `models` (rather than `services` or
 /// `platform`) so both the walk engine (`services::scan_service`) and
@@ -176,5 +332,106 @@ impl ScanProgressState {
 impl Default for ScanProgressState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn node(path: &str, kind: NodeKind, children: Option<Vec<FsNode>>) -> FsNode {
+        FsNode {
+            id: path.into(),
+            name: path.into(),
+            path: path.into(),
+            kind,
+            size: 0,
+            allocated: 0,
+            file_count: 0,
+            folder_count: 0,
+            percent_of_parent: 0.0,
+            last_modified: None,
+            category: None,
+            children,
+        }
+    }
+
+    #[test]
+    fn find_node_reaches_every_depth() {
+        let tree = node(
+            r"C:\",
+            NodeKind::Folder,
+            Some(vec![node(
+                r"C:\Users",
+                NodeKind::Folder,
+                Some(vec![
+                    node(r"C:\Users\Al", NodeKind::Folder, Some(vec![])),
+                    node(
+                        r"C:\Users\Alice",
+                        NodeKind::Folder,
+                        Some(vec![node(r"C:\Users\Alice\a.txt", NodeKind::File, None)]),
+                    ),
+                ]),
+            )]),
+        );
+        for path in [
+            r"C:\",
+            r"C:\Users",
+            r"C:\Users\Al",
+            r"C:\Users\Alice",
+            r"C:\Users\Alice\a.txt",
+        ] {
+            assert_eq!(find_node(&tree, path).map(|n| n.path.as_str()), Some(path));
+        }
+        // A sibling sharing a name prefix ("Al" vs "Alice") must not match.
+        assert!(find_node(&tree, r"C:\Users\Alicia").is_none());
+    }
+
+    #[test]
+    fn transport_copy_caps_breadth_and_depth_but_keeps_totals() {
+        let n = MAX_CHILDREN_PER_NODE as u64 + 10;
+        let files: Vec<FsNode> = (0..n)
+            .map(|i| {
+                let mut f = node(&format!(r"C:\wide\f{i}"), NodeKind::File, None);
+                f.size = i + 1;
+                f
+            })
+            .collect();
+        let mut wide = node(r"C:\wide", NodeKind::Folder, Some(files));
+        wide.size = (1..=n).sum();
+        let deep = node(
+            r"C:\a",
+            NodeKind::Folder,
+            Some(vec![node(
+                r"C:\a\b",
+                NodeKind::Folder,
+                Some(vec![node(r"C:\a\b\c", NodeKind::Folder, Some(vec![]))]),
+            )]),
+        );
+        let root = node(r"C:\", NodeKind::Folder, Some(vec![wide.clone(), deep]));
+
+        let t = truncate_for_transport(&root, TRANSPORT_DEPTH);
+        let kids = t.children.as_ref().unwrap();
+        let wide_kids = kids[0].children.as_ref().unwrap();
+        assert_eq!(wide_kids.len(), MAX_CHILDREN_PER_NODE);
+        let other = wide_kids.last().unwrap();
+        assert!(other.id.ends_with("::other"));
+        assert_eq!(other.file_count, 11);
+        // The 11 smallest files (sizes 1..=11) are the ones folded away,
+        // and the visible children still add up to the folder's size.
+        assert_eq!(other.size, (1..=11).sum::<u64>());
+        assert_eq!(wide_kids.iter().map(|c| c.size).sum::<u64>(), wide.size);
+        // Depth: C:\ (0) -> a (1) -> b (2, children dropped).
+        let b = &kids[1].children.as_ref().unwrap()[0];
+        assert!(b.children.is_none());
+        // The source tree itself stays complete.
+        assert_eq!(
+            root.children.as_ref().unwrap()[0]
+                .children
+                .as_ref()
+                .unwrap()
+                .len(),
+            n as usize
+        );
     }
 }

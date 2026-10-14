@@ -12,9 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Claude Code local tool state
-.claude/
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -25,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local screenshots (not published)
+Example images/

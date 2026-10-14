@@ -21,7 +21,11 @@
 //! reports back via `scan-cancelled` rather than stopping instantly.
 
 use crate::models::errors::{AppError, AppErrorCode};
-use crate::models::scan::{ScanOptions, ScanProgress, ScanProgressState, ScanResult};
+use crate::models::scan::{
+    find_node, truncate_for_transport, FsNode, ScanOptions, ScanProgress, ScanProgressState,
+    ScanResult, TRANSPORT_DEPTH,
+};
+use crate::services::scan_analysis_service::{self, RawScanAnalysis};
 use crate::services::{path_service, scan_service};
 use serde::Serialize;
 use std::collections::HashMap;
@@ -37,6 +41,21 @@ use tauri::{AppHandle, Emitter, Manager};
 #[derive(Default)]
 pub struct ScanRegistry {
     scans: Mutex<HashMap<String, Arc<ScanProgressState>>>,
+}
+
+/// Holds the *full* (neither breadth-capped nor
+/// depth-truncated) tree of every scan that has completed this
+/// session, keyed by scan id - so `get_subtree` can serve a folder's
+/// real children the instant the user drills into one that
+/// `scan-complete`'s own (depth-truncated) payload didn't include,
+/// with no re-scan needed. Unbounded for now (matches `ScanRegistry`'s
+/// existing "no eviction" scope) - a future phase could cap this to
+/// the last N scans or drop entries on navigating away, if repeated
+/// whole-drive scans in one session ever prove to be a real memory
+/// concern in practice.
+#[derive(Default)]
+pub struct ScanTreeCache {
+    trees: Mutex<HashMap<String, Arc<FsNode>>>,
 }
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
@@ -109,6 +128,63 @@ pub fn cancel_scan(app: AppHandle, scan_id: String) -> Result<(), AppError> {
         state.cancel();
     }
     Ok(())
+}
+
+/// Fetches a specific folder's real children on demand - the
+/// counterpart to `scan-complete`'s own depth-truncated payload (see
+/// `ScanTreeCache`/`TRANSPORT_DEPTH`): the frontend calls this when the
+/// user drills into a folder whose `children` wasn't included in what
+/// it already has. Pure in-memory lookup against the cached full tree,
+/// no re-scan - the same reason a whole-drive scan's fast MFT engine
+/// exists in the first place (read once, serve many times) applies
+/// here too.
+#[tauri::command]
+pub fn get_subtree(app: AppHandle, scan_id: String, path: String) -> Result<FsNode, AppError> {
+    let root = cached_tree(&app, &scan_id)?;
+    let node = lookup(&root, &path)?;
+    Ok(truncate_for_transport(node, TRANSPORT_DEPTH))
+}
+
+/// Computes a folder's analytical-tab data (file types, top files/
+/// folders, extensions, timeline) from the cached *full* tree - the
+/// frontend can't do this itself any more, since it only ever holds a
+/// depth-truncated copy. Runs on the blocking pool: on a whole-drive
+/// scan's root this walks ~1M nodes.
+#[tauri::command]
+pub async fn analyze_subtree(
+    app: AppHandle,
+    scan_id: String,
+    path: String,
+) -> Result<RawScanAnalysis, AppError> {
+    // Cloning the `Arc` out releases the cache lock before the walk,
+    // so a concurrent `get_subtree` (the user drilling in) never waits
+    // on an analysis.
+    let root = cached_tree(&app, &scan_id)?;
+    super::blocking(move || Ok(scan_analysis_service::analyze(lookup(&root, &path)?))).await
+}
+
+fn cached_tree(app: &AppHandle, scan_id: &str) -> Result<Arc<FsNode>, AppError> {
+    app.state::<ScanTreeCache>()
+        .trees
+        .lock()
+        .unwrap()
+        .get(scan_id)
+        .cloned()
+        .ok_or_else(|| {
+            AppError::new(
+                AppErrorCode::PathNotFound,
+                "That scan's result is no longer available - try scanning again.",
+            )
+        })
+}
+
+fn lookup<'a>(root: &'a FsNode, path: &str) -> Result<&'a FsNode, AppError> {
+    find_node(root, path).ok_or_else(|| {
+        AppError::new(
+            AppErrorCode::PathNotFound,
+            "That folder wasn't found in the scan result.",
+        )
+    })
 }
 
 fn emit_progress(app: &AppHandle, scan_id: &str, state: &ScanProgressState, started: Instant) {
@@ -190,9 +266,21 @@ async fn run_and_report(
                 size = root.size,
                 "scan complete"
             );
+            // The full tree is kept in memory for `get_subtree`/
+            // `analyze_subtree` to serve from on demand; only a shallow,
+            // depth- and breadth-capped copy goes out over IPC - see `ScanTreeCache`'s doc
+            // comment for why a full whole-drive tree can't go out in
+            // one `scan-complete` event at all.
+            let transport_root = truncate_for_transport(&root, TRANSPORT_DEPTH);
+            app.state::<ScanTreeCache>()
+                .trees
+                .lock()
+                .unwrap()
+                .insert(scan_id.clone(), Arc::new(root));
+
             let result = ScanResult {
                 scan_id: scan_id.clone(),
-                root,
+                root: transport_root,
                 engine,
                 elapsed_ms,
                 skipped: state.take_skipped(),

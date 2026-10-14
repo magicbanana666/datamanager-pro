@@ -15,6 +15,11 @@ interface TreemapProps {
   selectedId?: string | null;
   onSelect?: (node: FsNode) => void;
   onDrillDown?: (node: FsNode) => void;
+  /** Which tiles a double-click drills into. Defaults to folders whose
+   * children are already loaded; a real scan passes
+   * `hasExpandableChildren` so truncated folders (fetched on demand)
+   * stay drillable too. */
+  canDrillDown?: (node: FsNode) => boolean;
   className?: string;
 }
 
@@ -175,7 +180,18 @@ function layoutRecursive(
   }
 }
 
-export function Treemap({ node, selectedId, onSelect, onDrillDown, className }: TreemapProps) {
+function hasLoadedChildren(node: FsNode): boolean {
+  return !!node.children && node.children.length > 0;
+}
+
+export function Treemap({
+  node,
+  selectedId,
+  onSelect,
+  onDrillDown,
+  canDrillDown = hasLoadedChildren,
+  className,
+}: TreemapProps) {
   const { ref, size } = useElementSize<HTMLDivElement>();
 
   const tiles = useMemo(() => {
@@ -193,7 +209,7 @@ export function Treemap({ node, selectedId, onSelect, onDrillDown, className }: 
       {tiles.map((t) => {
         const isSelected = t.node.id === selectedId;
         const isFile = t.node.kind === "file";
-        const hasChildren = !!t.node.children && t.node.children.length > 0;
+        const canDrill = canDrillDown(t.node);
         const color = t.isHeader ? HEADER_COLOR : isFile ? fileColor(t.node.name) : FOLDER_COLOR;
         // Deliberately tight thresholds (WizTree-style density over
         // Phase 1's original spacious tiles) - most tiles in a real,
@@ -208,7 +224,7 @@ export function Treemap({ node, selectedId, onSelect, onDrillDown, className }: 
           <button
             key={`${t.node.id}:${t.depth}:${t.x.toFixed(0)}:${t.y.toFixed(0)}`}
             onClick={() => onSelect?.(t.node)}
-            onDoubleClick={() => hasChildren && onDrillDown?.(t.node)}
+            onDoubleClick={() => canDrill && onDrillDown?.(t.node)}
             title={`${t.node.name} — ${formatBytes(t.node.size)}`}
             style={{
               position: "absolute",

@@ -1165,6 +1165,7 @@ pub fn bulk_scan_via_mft(
 #[cfg(test)]
 mod bulk_mft_tests {
     use super::*;
+    use crate::models::scan::MAX_CHILDREN_PER_NODE;
     use std::time::Instant;
 
     /// Direct, UI-free timing/correctness check for the bulk-$MFT-read
@@ -1448,6 +1449,65 @@ mod bulk_mft_tests {
         }
 
         dump_record(&mut data, file_record_size, target_record_number, "target");
+    }
+
+    /// Confirms `truncate_for_transport` actually shrinks the
+    /// *serialized* tree for a real, huge target - by depth and by
+    /// breadth - while the cached full tree stays complete. Prints the
+    /// full tree's size next to the JSON payload a `scan-complete`
+    /// event would actually carry, the thing that froze the webview live.
+    #[test]
+    #[ignore]
+    fn bulk_mft_capped_payload_size() {
+        let target = std::env::var("MFT_BENCH_PATH").unwrap_or_else(|_| r"C:\".to_string());
+        let options = ScanOptions::default();
+        let state = ScanProgressState::new();
+        let root = bulk_scan_via_mft(&target, options, &state).expect("bulk_scan_via_mft failed");
+
+        fn count_nodes(n: &FsNode) -> u64 {
+            1 + n
+                .children
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .map(count_nodes)
+                .sum::<u64>()
+        }
+        fn max_direct_children(n: &FsNode) -> usize {
+            let here = n.children.as_ref().map(|c| c.len()).unwrap_or(0);
+            n.children
+                .as_deref()
+                .unwrap_or(&[])
+                .iter()
+                .map(max_direct_children)
+                .fold(here, usize::max)
+        }
+
+        println!(
+            "[cached full tree] nodes={} widest_folder={} true_files={} true_folders={}",
+            count_nodes(&root),
+            max_direct_children(&root),
+            root.file_count,
+            root.folder_count,
+        );
+
+        let transport = crate::models::scan::truncate_for_transport(
+            &root,
+            crate::models::scan::TRANSPORT_DEPTH,
+        );
+        let widest = max_direct_children(&transport);
+        let transport_json = serde_json::to_vec(&transport).expect("serialize");
+        println!(
+            "[actual scan-complete payload] nodes={} widest_folder={widest} json_bytes={} ({:.1} MB)",
+            count_nodes(&transport),
+            transport_json.len(),
+            transport_json.len() as f64 / 1_048_576.0,
+        );
+        assert!(
+            widest <= MAX_CHILDREN_PER_NODE,
+            "a folder still serialized {widest} direct children, over the {MAX_CHILDREN_PER_NODE} cap"
+        );
+        assert_eq!(transport.file_count, root.file_count);
     }
 
     /// Two back-to-back bulk-only runs, minutes apart only by however

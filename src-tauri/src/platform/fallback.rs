@@ -21,6 +21,18 @@ pub fn allocated_size_bytes(_path: &Path, _logical_size: u64) -> Option<u64> {
     None
 }
 
+pub fn allocated_size_for_scan(
+    _path: &Path,
+    _metadata: &std::fs::Metadata,
+    _cluster_size: Option<u64>,
+) -> Option<u64> {
+    None
+}
+
+pub fn cluster_size_bytes(_path: &Path) -> Option<u64> {
+    None
+}
+
 pub fn decode_attributes(_metadata: &std::fs::Metadata) -> Vec<FileAttribute> {
     Vec::new()
 }

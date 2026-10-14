@@ -79,17 +79,28 @@ function timelineBucketLabel(lastModified: string | null, now: number): string {
 const TOP_N = 10;
 const TOP_EXTENSIONS = 9;
 
+/** Raw aggregates a tree walk produces - exactly the shape the
+ * backend's `analyze_subtree` command returns (see
+ * `src-tauri/src/services/scan_analysis_service.rs`), so a real
+ * scan's analysis (computed backend-side, against the full cached
+ * tree) and mock data's (computed here) share `finalizeAnalysis`. */
+export interface RawScanAnalysis {
+  /** Every extension seen, lowercased with its dot; `""` for none. */
+  extensions: { extension: string; files: number; size: number }[];
+  topFiles: LargestFileEntry[];
+  topFolders: { path: string; size: number }[];
+  timeline: TimelineBucket[];
+}
+
 /**
- * Single recursive pass over `node` (the scan root, or any drilled-
- * into subfolder - callers re-run this per breadcrumb position, not
- * just once for the whole tree) producing every real-tab dataset at
- * once rather than a separate walk per tab. Cheap enough to call on
- * navigation even for Phase 3's live-verified ~750K-file scale (one
- * native array sort per list, not a repeated tree walk).
+ * Single recursive pass over `node`, producing every raw aggregate at
+ * once. Only accurate for a tree the frontend holds in full - i.e.
+ * Phase 1 mock data. A real scan arrives depth-truncated (see
+ * `TRANSPORT_DEPTH` in `src-tauri/src/models/scan.rs`), so real scans
+ * are analyzed by the backend instead - see `useScanAnalysis`.
  */
-export function analyzeTree(node: FsNode): ScanAnalysis {
+export function analyzeTreeRaw(node: FsNode): RawScanAnalysis {
   const now = Date.now();
-  const categoryTotals = new Map<FileTypeCategoryId, number>();
   const extensionTotals = new Map<string, { size: number; files: number }>();
   const timelineTotals = new Map<string, number>();
   const files: LargestFileEntry[] = [];
@@ -97,10 +108,7 @@ export function analyzeTree(node: FsNode): ScanAnalysis {
 
   function visit(n: FsNode, isRoot: boolean) {
     if (n.kind === "file") {
-      const category = categorizeByExtension(n.name);
-      categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + n.size);
-
-      const ext = extensionOf(n.name) || "(none)";
+      const ext = extensionOf(n.name);
       const entry = extensionTotals.get(ext) ?? { size: 0, files: 0 };
       entry.size += n.size;
       entry.files += 1;
@@ -120,6 +128,28 @@ export function analyzeTree(node: FsNode): ScanAnalysis {
   }
   visit(node, true);
 
+  return {
+    extensions: [...extensionTotals.entries()].map(([extension, v]) => ({ extension, ...v })),
+    topFiles: [...files].sort((a, b) => b.size - a.size).slice(0, TOP_N),
+    topFolders: [...folders].sort((a, b) => b.size - a.size).slice(0, TOP_N),
+    timeline: TIMELINE_BUCKETS.map((bucket) => ({
+      label: bucket.label,
+      size: timelineTotals.get(bucket.label) ?? 0,
+    })),
+  };
+}
+
+/** Turns raw aggregates into every analytical-tab dataset: maps
+ * extensions to file-type categories (a frontend concern, per Phase
+ * 2's "backend sends raw data" convention) and folds the extension
+ * list into its largest entries plus "(other)". */
+export function finalizeAnalysis(raw: RawScanAnalysis): ScanAnalysis {
+  const categoryTotals = new Map<FileTypeCategoryId, number>();
+  for (const { extension, size } of raw.extensions) {
+    const category = EXTENSION_TO_CATEGORY.get(extension) ?? "other";
+    categoryTotals.set(category, (categoryTotals.get(category) ?? 0) + size);
+  }
+
   const totalCategorySize = [...categoryTotals.values()].reduce((a, b) => a + b, 0);
   const categoryStats: CategoryStat[] = FILE_TYPE_CATEGORIES.map((category) => {
     const value = categoryTotals.get(category.id) ?? 0;
@@ -133,18 +163,18 @@ export function analyzeTree(node: FsNode): ScanAnalysis {
     .filter((stat) => stat.value > 0)
     .sort((a, b) => b.value - a.value);
 
-  const totalExtensionSize = [...extensionTotals.values()].reduce((a, b) => a + b.size, 0);
-  const sortedExtensions = [...extensionTotals.entries()].sort((a, b) => b[1].size - a[1].size);
-  const extensionStats: ExtensionStat[] = sortedExtensions.slice(0, TOP_EXTENSIONS).map(([extension, stat]) => ({
-    extension,
+  const totalExtensionSize = raw.extensions.reduce((a, e) => a + e.size, 0);
+  const sortedExtensions = [...raw.extensions].sort((a, b) => b.size - a.size);
+  const extensionStats: ExtensionStat[] = sortedExtensions.slice(0, TOP_EXTENSIONS).map((stat) => ({
+    extension: stat.extension || "(none)",
     files: stat.files,
     size: stat.size,
     percent: totalExtensionSize > 0 ? (stat.size / totalExtensionSize) * 100 : 0,
   }));
   const restExtensions = sortedExtensions.slice(TOP_EXTENSIONS);
   if (restExtensions.length > 0) {
-    const size = restExtensions.reduce((a, [, v]) => a + v.size, 0);
-    const filesCount = restExtensions.reduce((a, [, v]) => a + v.files, 0);
+    const size = restExtensions.reduce((a, v) => a + v.size, 0);
+    const filesCount = restExtensions.reduce((a, v) => a + v.files, 0);
     extensionStats.push({
       extension: "(other)",
       files: filesCount,
@@ -153,18 +183,17 @@ export function analyzeTree(node: FsNode): ScanAnalysis {
     });
   }
 
-  const timeline: TimelineBucket[] = TIMELINE_BUCKETS.map((bucket) => ({
-    label: bucket.label,
-    size: timelineTotals.get(bucket.label) ?? 0,
-  }));
-
   return {
     categoryStats,
     extensionStats,
-    topFiles: [...files].sort((a, b) => b.size - a.size).slice(0, TOP_N),
-    topFolders: [...folders].sort((a, b) => b.size - a.size).slice(0, TOP_N),
-    timeline,
+    topFiles: raw.topFiles,
+    topFolders: raw.topFolders,
+    timeline: raw.timeline,
   };
+}
+
+export function analyzeTree(node: FsNode): ScanAnalysis {
+  return finalizeAnalysis(analyzeTreeRaw(node));
 }
 
 /**

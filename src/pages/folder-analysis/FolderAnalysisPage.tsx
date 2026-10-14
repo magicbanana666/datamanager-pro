@@ -22,14 +22,17 @@ import { projectsFolderTree } from "@/mock/folderTree";
 import { folderFileTypeStats, folderLargestFiles, folderSizeDistribution } from "@/mock/fileTypes";
 import { diskTimeline } from "@/mock/analysisExtra";
 import { duplicateGroups } from "@/mock/duplicates";
-import { flattenVisible } from "@/utils/fsTree";
-import { analyzeTree, topChildrenWithOthers } from "@/utils/scanAnalysis";
+import { flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
+import { topChildrenWithOthers } from "@/utils/scanAnalysis";
+import { useScanAnalysis } from "@/hooks/useScanAnalysis";
 import type { FsNode } from "@/models/common";
 import { DEFAULT_SCAN_OPTIONS } from "@/models/backend";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
 import { useScanNotifications } from "@/hooks/useScanNotifications";
 import { useFilesystemStore } from "@/state/filesystemStore";
+import { toAppError } from "@/api/backend";
 import { useScanStore } from "@/state/scanStore";
+import { toast } from "@/state/toastStore";
 import { useUiStore } from "@/state/uiStore";
 
 const TABS = [
@@ -44,7 +47,9 @@ const TABS = [
 
 export function FolderAnalysisPage() {
   const navigate = useNavigate();
-  const [location, setLocation] = useState("D:\\Data\\Projects");
+  // Follows the active/last scan, so navigating away mid-scan and back
+  // doesn't reset this to the default while a different path is scanning.
+  const [location, setLocation] = useState(() => useScanStore.getState().path ?? "D:\\Data\\Projects");
   const [tab, setTab] = useState("treemap");
   // A real scan's result is global (`useScanStore`) and can already
   // exist when this page first mounts (e.g. navigating back after
@@ -106,11 +111,14 @@ export function FolderAnalysisPage() {
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
   const visibleRows = useMemo(() => flattenVisible(currentNode, expandedIds), [currentNode, expandedIds]);
+  // O(1) per-row depth lookup for the Name column - a linear `find`
+  // per row made rendering a wide expanded folder quadratic.
+  const depthById = useMemo(() => new Map(visibleRows.map((r) => [r.node.id, r.depth])), [visibleRows]);
 
   // Scoped to the current breadcrumb position - drilling into a
   // subfolder re-scopes File Types/Top Files/Top Folders/Timeline to
   // it. Only recomputed on navigation.
-  const analysis = useMemo(() => analyzeTree(currentNode), [currentNode]);
+  const analysis = useScanAnalysis(currentNode, isReal ? realScan.scanId : null);
   const topFilesData = isReal ? analysis.topFiles : folderLargestFiles;
   // Pre-scan fallback matches this tab's original (already tree-
   // derived, never a fixed mock array) behavior exactly: direct
@@ -127,22 +135,36 @@ export function FolderAnalysisPage() {
     ? topChildrenWithOthers(currentNode.children ?? [], 3)
     : folderSizeDistribution;
 
+  // A real scan's tree arrives depth-truncated, so a folder may need
+  // its children fetched first (see `needsChildren`) - a no-op for
+  // mock data and already-loaded folders.
   function drillInto(node: FsNode) {
-    setBreadcrumb((b) => [...b, node]);
-    setSelectedNode(node);
+    realScan
+      .loadChildren(node)
+      .then((loaded) => {
+        if (!loaded.children?.length) return;
+        setBreadcrumb((b) => [...b, loaded]);
+        setSelectedNode(loaded);
+      })
+      .catch((err) => toast.danger(toAppError(err).message));
   }
 
   function navigateBreadcrumb(index: number) {
     setBreadcrumb((b) => b.slice(0, index + 1));
   }
 
-  function toggleExpand(id: string) {
-    setExpandedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  function toggleExpand(node: FsNode) {
+    realScan
+      .loadChildren(node)
+      .then(() =>
+        setExpandedIds((prev) => {
+          const next = new Set(prev);
+          if (next.has(node.id)) next.delete(node.id);
+          else next.add(node.id);
+          return next;
+        }),
+      )
+      .catch((err) => toast.danger(toAppError(err).message));
   }
 
   function startScan() {
@@ -159,15 +181,14 @@ export function FolderAnalysisPage() {
       minWidth: 160,
       sortAccessor: (n) => n.name,
       render: (n) => {
-        const row = visibleRows.find((r) => r.node.id === n.id);
-        const depth = row?.depth ?? 0;
-        const hasChildren = !!n.children && n.children.length > 0;
+        const depth = depthById.get(n.id) ?? 0;
+        const hasChildren = hasExpandableChildren(n);
         return (
           <div className="flex min-w-0 items-center gap-1" style={{ paddingLeft: depth * 16 }}>
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                if (hasChildren) toggleExpand(n.id);
+                if (hasChildren) toggleExpand(n);
               }}
               className={clsx(
                 "flex h-4 w-4 shrink-0 items-center justify-center text-fg-subtle",
@@ -306,7 +327,7 @@ export function FolderAnalysisPage() {
           {tab === "treemap" && (
             <>
               <Breadcrumb segments={breadcrumb.map((n) => ({ id: n.id, label: n.name }))} onNavigate={navigateBreadcrumb} />
-              <Treemap node={currentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} className="flex-1" />
+              <Treemap node={currentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} canDrillDown={hasExpandableChildren} className="flex-1" />
             </>
           )}
           {tab === "chart" && (
@@ -422,7 +443,7 @@ export function FolderAnalysisPage() {
           getRowId={(n) => n.id}
           selectedId={selectedNode?.id}
           onRowClick={setSelectedNode}
-          onRowDoubleClick={(n) => n.children && n.children.length > 0 && drillInto(n)}
+          onRowDoubleClick={(n) => hasExpandableChildren(n) && drillInto(n)}
           className="h-full border-0 rounded-none"
         />
       </Card>

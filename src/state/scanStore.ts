@@ -10,15 +10,21 @@
  * state back, never touching `api/scan.ts` or Tauri events directly.
  */
 import { create } from "zustand";
-import { cancelScan, generateScanId, startScan, subscribeScanEvents } from "@/api/scan";
+import { cancelScan, generateScanId, getSubtree, startScan, subscribeScanEvents } from "@/api/scan";
 import { toAppError } from "@/api/backend";
 import type { AppError, ScanOptions, ScanProgress, ScanResult } from "@/models/backend";
+import type { FsNode } from "@/models/common";
+import { needsChildren } from "@/utils/fsTree";
 
 export type ScanStatus = "idle" | "scanning" | "completed" | "cancelled" | "error";
 
 interface ScanState {
   status: ScanStatus;
   scanId: string | null;
+  /** What the current (or last) scan is scanning - lets a page that
+   * remounts mid-scan (navigating away and back) show the real target
+   * instead of resetting its location field to the default. */
+  path: string | null;
   progress: ScanProgress | null;
   result: ScanResult | null;
   error: AppError | null;
@@ -26,6 +32,10 @@ interface ScanState {
   start: (path: string, options: ScanOptions) => Promise<void>;
   cancel: () => Promise<void>;
   reset: () => void;
+  /** Resolves to `node` with its `children` populated, fetching them
+   * from the backend's cached full tree first if they were truncated
+   * out of what the frontend received (see `needsChildren`). */
+  loadChildren: (node: FsNode) => Promise<FsNode>;
 }
 
 export const useScanStore = create<ScanState>((set, get) => {
@@ -36,6 +46,7 @@ export const useScanStore = create<ScanState>((set, get) => {
   return {
     status: "idle",
     scanId: null,
+    path: null,
     progress: null,
     result: null,
     error: null,
@@ -48,6 +59,7 @@ export const useScanStore = create<ScanState>((set, get) => {
       set({
         status: "scanning",
         scanId,
+        path,
         progress: null,
         result: null,
         error: null,
@@ -95,7 +107,21 @@ export const useScanStore = create<ScanState>((set, get) => {
     reset: () => {
       unlisten?.();
       unlisten = null;
-      set({ status: "idle", scanId: null, progress: null, result: null, error: null });
+      set({ status: "idle", scanId: null, path: null, progress: null, result: null, error: null });
+    },
+
+    loadChildren: async (node) => {
+      const { scanId, status } = get();
+      if (!scanId || status !== "completed" || !needsChildren(node)) return node;
+      const loaded = await getSubtree(scanId, node.path);
+      // Deliberately grafted onto the existing node in place, not
+      // copied: the result tree is this session's cache, so navigating
+      // back to (or re-expanding) this folder never refetches, and
+      // every breadcrumb/selection reference to it sees the children.
+      // Callers still trigger a re-render themselves (a new breadcrumb
+      // entry or expanded-ids set) since React can't see the mutation.
+      node.children = loaded.children;
+      return node;
     },
   };
 });

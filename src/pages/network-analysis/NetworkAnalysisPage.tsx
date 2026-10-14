@@ -63,6 +63,9 @@ export function NetworkAnalysisPage() {
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
   const visibleRows = useMemo(() => flattenVisible(currentNode, expandedIds), [currentNode, expandedIds]);
+  // O(1) per-row depth lookup for the Name column - a linear `find`
+  // per row made rendering a wide expanded folder quadratic.
+  const depthById = useMemo(() => new Map(visibleRows.map((r) => [r.node.id, r.depth])), [visibleRows]);
 
   function drillInto(node: FsNode) {
     setBreadcrumb((b) => [...b, node]);
@@ -92,8 +95,7 @@ export function NetworkAnalysisPage() {
       minWidth: 160,
       sortAccessor: (n) => n.name,
       render: (n) => {
-        const row = visibleRows.find((r) => r.node.id === n.id);
-        const depth = row?.depth ?? 0;
+        const depth = depthById.get(n.id) ?? 0;
         const hasChildren = !!n.children && n.children.length > 0;
         return (
           <div className="flex min-w-0 items-center gap-1" style={{ paddingLeft: depth * 16 }}>

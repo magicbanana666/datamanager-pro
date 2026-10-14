@@ -209,6 +209,48 @@ fn wide_to_string(buf: &[u16]) -> Option<String> {
 /// size (matching what Windows Explorer shows). Returns `None` if
 /// neither Win32 call succeeds rather than inventing a value.
 pub fn allocated_size_bytes(path: &Path, logical_size: u64) -> Option<u64> {
+    if let Some(compressed) = compressed_size_bytes(path, logical_size) {
+        return Some(compressed);
+    }
+    // Not compressed/sparse (or the call failed outright): round the
+    // logical size up to the volume's cluster size.
+    Some(round_to_cluster(logical_size, cluster_size_bytes(path)?))
+}
+
+/// File attributes under which a file's on-disk size can differ from
+/// its cluster-rounded logical size, so only these are worth the extra
+/// `GetCompressedFileSizeW` call: compressed, sparse, and offline/
+/// cloud-placeholder files (OneDrive "online-only", for instance).
+const ON_DISK_SIZE_MAY_DIFFER: u32 = FILE_ATTRIBUTE_COMPRESSED
+    | FILE_ATTRIBUTE_SPARSE_FILE
+    | FILE_ATTRIBUTE_OFFLINE
+    | 0x0004_0000 // FILE_ATTRIBUTE_RECALL_ON_OPEN
+    | 0x0040_0000; // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
+
+/// [`allocated_size_bytes`] for a scan's hot loop: same result, but
+/// takes the volume's cluster size precomputed once per scan (see
+/// [`cluster_size_bytes`]) and the entry's already-read metadata, and
+/// only calls `GetCompressedFileSizeW` when the file's attributes say
+/// its on-disk size can actually differ. Confirmed live this matters:
+/// the per-file `GetCompressedFileSizeW` + `GetDiskFreeSpaceW` pair was
+/// ~2 extra syscalls on each of ~930K files in a full `C:\` walk scan.
+pub fn allocated_size_for_scan(
+    path: &Path,
+    metadata: &std::fs::Metadata,
+    cluster_size: Option<u64>,
+) -> Option<u64> {
+    let logical_size = metadata.len();
+    if metadata.file_attributes() & ON_DISK_SIZE_MAY_DIFFER != 0 {
+        if let Some(compressed) = compressed_size_bytes(path, logical_size) {
+            return Some(compressed);
+        }
+    }
+    Some(round_to_cluster(logical_size, cluster_size?))
+}
+
+/// The compressed/sparse on-disk size, only when the filesystem reports
+/// one that's non-zero and differs from the logical size.
+fn compressed_size_bytes(path: &Path, logical_size: u64) -> Option<u64> {
     let wide_path = to_wide(&path.to_string_lossy());
     let path_pcwstr = PCWSTR(wide_path.as_ptr());
 
@@ -217,15 +259,17 @@ pub fn allocated_size_bytes(path: &Path, logical_size: u64) -> Option<u64> {
     const INVALID_FILE_SIZE: u32 = 0xFFFF_FFFF;
     let succeeded =
         low != INVALID_FILE_SIZE || unsafe { windows::Win32::Foundation::GetLastError() }.0 == 0;
-    if succeeded {
-        let compressed = ((high as u64) << 32) | low as u64;
-        if compressed != 0 && compressed != logical_size {
-            return Some(compressed);
-        }
-    }
+    let compressed = ((high as u64) << 32) | low as u64;
+    (succeeded && compressed != 0 && compressed != logical_size).then_some(compressed)
+}
 
-    // Not compressed/sparse (or the call failed outright): round the
-    // logical size up to the volume's cluster size.
+fn round_to_cluster(logical_size: u64, cluster_size: u64) -> u64 {
+    logical_size.div_ceil(cluster_size) * cluster_size
+}
+
+/// The cluster size of the volume `path` lives on, or `None` if it
+/// can't be determined.
+pub fn cluster_size_bytes(path: &Path) -> Option<u64> {
     let root = drive_root_of(path)?;
     let wide_root = to_wide(&root);
     let root_pcwstr = PCWSTR(wide_root.as_ptr());
@@ -244,15 +288,8 @@ pub fn allocated_size_bytes(path: &Path, logical_size: u64) -> Option<u64> {
         )
         .is_ok()
     };
-    if !ok {
-        return None;
-    }
     let cluster_size = (sectors_per_cluster as u64) * (bytes_per_sector as u64);
-    if cluster_size == 0 {
-        return None;
-    }
-    let allocated = logical_size.div_ceil(cluster_size) * cluster_size;
-    Some(allocated)
+    (ok && cluster_size > 0).then_some(cluster_size)
 }
 
 fn drive_root_of(path: &Path) -> Option<String> {

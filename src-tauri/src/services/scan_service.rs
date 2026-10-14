@@ -8,10 +8,12 @@
 //! Parallelism comes from rayon: each directory's subdirectories are
 //! scanned via a parallel iterator, so wide trees fan out across CPU
 //! cores while `fs::read_dir` I/O for sibling directories overlaps.
-//! Files are still read from disk with the same per-entry syscalls
-//! `filesystem_service::list_directory` uses (`platform::current`'s
-//! attribute/allocation helpers are reused as-is) - that per-file cost
-//! is exactly what the MFT engine exists to avoid.
+//! Everything per entry comes from the directory listing itself
+//! (`FindNextFileW` already returns size, attributes and timestamps);
+//! the only extra per-file syscall is `GetCompressedFileSizeW`, and only
+//! for files whose attributes say it can matter - see
+//! `platform::current::allocated_size_for_scan`. Directory enumeration
+//! itself is still the cost the MFT engine exists to avoid.
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::FileAttribute;
@@ -23,6 +25,7 @@ use rayon::prelude::*;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
+use std::time::SystemTime;
 
 /// Tries the MFT fast path first (local NTFS drives, admin/backup
 /// privilege permitting); falls back to the walk engine on any
@@ -71,7 +74,12 @@ fn empty_folder_node(path: String, name: String) -> FsNode {
 /// cycles and double-counting a target that's also reachable directly.
 /// Its own (misleading) link-text length is deliberately not reported
 /// as `size` - see PHASE3.md's Known Limitations.
-fn leaf_node(path: &Path, metadata: &fs::Metadata, is_symlink: bool) -> FsNode {
+fn leaf_node(
+    path: &Path,
+    metadata: &fs::Metadata,
+    is_symlink: bool,
+    cluster_size: Option<u64>,
+) -> FsNode {
     let path_str = normalize_path(&path.to_string_lossy());
     let name = path
         .file_name()
@@ -81,7 +89,7 @@ fn leaf_node(path: &Path, metadata: &fs::Metadata, is_symlink: bool) -> FsNode {
     let allocated = if is_symlink {
         0
     } else {
-        platform::current::allocated_size_bytes(path, size).unwrap_or(size)
+        platform::current::allocated_size_for_scan(path, metadata, cluster_size).unwrap_or(size)
     };
 
     FsNode {
@@ -113,6 +121,21 @@ fn leaf_node(path: &Path, metadata: &fs::Metadata, is_symlink: bool) -> FsNode {
 /// caller (`commands::scan`) is responsible for treating a cancelled
 /// scan's result as discarded rather than complete.
 pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) -> FsNode {
+    // Both looked up once per scan, not per entry: the cluster size is
+    // the same for every file on the volume, and every other folder's
+    // modified time comes from its parent's listing.
+    let cluster_size = platform::current::cluster_size_bytes(path);
+    let modified = fs::metadata(path).ok().and_then(|m| m.modified().ok());
+    scan_dir_inner(path, modified, options, state, cluster_size)
+}
+
+fn scan_dir_inner(
+    path: &Path,
+    modified: Option<SystemTime>,
+    options: ScanOptions,
+    state: &ScanProgressState,
+    cluster_size: Option<u64>,
+) -> FsNode {
     let path_str = normalize_path(&path.to_string_lossy());
     let name = path
         .file_name()
@@ -135,7 +158,7 @@ pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) ->
     // Pass 1 (sequential, cheap): classify entries and build file leaves
     // directly; collect subdirectory paths for the parallel pass below.
     let mut files: Vec<FsNode> = Vec::new();
-    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut subdirs: Vec<(PathBuf, Option<SystemTime>)> = Vec::new();
     for item in read_dir {
         let item = match item {
             Ok(i) => i,
@@ -168,11 +191,11 @@ pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) ->
         }
 
         if file_type.is_symlink() {
-            files.push(leaf_node(&entry_path, &metadata, true));
+            files.push(leaf_node(&entry_path, &metadata, true, cluster_size));
         } else if file_type.is_dir() {
-            subdirs.push(entry_path);
+            subdirs.push((entry_path, metadata.modified().ok()));
         } else {
-            files.push(leaf_node(&entry_path, &metadata, false));
+            files.push(leaf_node(&entry_path, &metadata, false, cluster_size));
         }
     }
 
@@ -187,8 +210,8 @@ pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) ->
     // parallelizing only the top level.
     let child_folders: Vec<FsNode> = subdirs
         .into_par_iter()
-        .map(|subdir| {
-            let node = scan_dir(&subdir, options, state);
+        .map(|(subdir, modified)| {
+            let node = scan_dir_inner(&subdir, modified, options, state, cluster_size);
             state.folders.fetch_add(1, Ordering::Relaxed);
             node
         })
@@ -228,10 +251,7 @@ pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) ->
         };
     }
 
-    let last_modified = fs::metadata(path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .and_then(system_time_to_iso8601);
+    let last_modified = modified.and_then(system_time_to_iso8601);
 
     FsNode {
         id: path_str.clone(),
@@ -370,5 +390,44 @@ mod tests {
         // The real subfolder is still walked normally.
         let real = children.iter().find(|c| c.name == "real").unwrap();
         assert_eq!(real.size, 5);
+    }
+
+    /// Live timing for the walk engine against a real folder
+    /// (`WALK_BENCH_PATH`, default `C:\Windows`), plus a spot check that
+    /// the fast per-scan allocated-size path agrees with the full
+    /// per-file `allocated_size_bytes` lookup on the first 5,000 files.
+    #[test]
+    #[ignore]
+    fn walk_bench() {
+        let target = std::env::var("WALK_BENCH_PATH").unwrap_or_else(|_| r"C:\Windows".to_string());
+        let st = ScanProgressState::new();
+        let started = std::time::Instant::now();
+        let root = scan_dir(Path::new(&target), ScanOptions::default(), &st);
+        println!(
+            "walk {target}: {:.1}s files={} folders={}",
+            started.elapsed().as_secs_f64(),
+            root.file_count,
+            root.folder_count
+        );
+
+        let mut checked = 0;
+        let mut mismatches = 0;
+        let mut stack = vec![&root];
+        while let Some(n) = stack.pop() {
+            if checked >= 5_000 {
+                break;
+            }
+            if n.kind == NodeKind::File && n.size > 0 {
+                let full = platform::current::allocated_size_bytes(Path::new(&n.path), n.size)
+                    .unwrap_or(n.size);
+                if full != n.allocated {
+                    mismatches += 1;
+                }
+                checked += 1;
+            }
+            stack.extend(n.children.as_deref().unwrap_or(&[]));
+        }
+        println!("allocated spot check: {mismatches} mismatches in {checked} files");
+        assert_eq!(mismatches, 0);
     }
 }

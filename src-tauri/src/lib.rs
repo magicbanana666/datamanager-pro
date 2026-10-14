@@ -20,7 +20,9 @@ mod utils;
 use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
-use commands::scan::{cancel_scan, start_scan, ScanRegistry};
+use commands::scan::{
+    analyze_subtree, cancel_scan, get_subtree, start_scan, ScanRegistry, ScanTreeCache,
+};
 use commands::storage::list_storage_volumes;
 use commands::system::{get_app_version, get_system_info, ping_backend};
 
@@ -40,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ScanRegistry::default())
+        .manage(ScanTreeCache::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             get_system_info,
@@ -52,6 +55,8 @@ pub fn run() {
             get_folder_metadata,
             start_scan,
             cancel_scan,
+            get_subtree,
+            analyze_subtree,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

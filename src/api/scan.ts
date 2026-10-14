@@ -12,6 +12,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AppError, ScanOptions, ScanProgress, ScanResult } from "@/models/backend";
+import type { FsNode } from "@/models/common";
+import type { RawScanAnalysis } from "@/utils/scanAnalysis";
 
 export function generateScanId(): string {
   return `scan-${crypto.randomUUID()}`;
@@ -23,6 +25,19 @@ export function startScan(scanId: string, path: string, options: ScanOptions): P
 
 export function cancelScan(scanId: string): Promise<void> {
   return invoke("cancel_scan", { scanId });
+}
+
+/** A folder's children (themselves depth-truncated again) from a
+ * completed scan's full tree, which the backend keeps cached -
+ * `scan-complete` only carries the top `TRANSPORT_DEPTH` levels. */
+export function getSubtree(scanId: string, path: string): Promise<FsNode> {
+  return invoke("get_subtree", { scanId, path });
+}
+
+/** Analytical-tab aggregates for any folder of a completed scan,
+ * computed backend-side against the full cached tree. */
+export function analyzeSubtree(scanId: string, path: string): Promise<RawScanAnalysis> {
+  return invoke("analyze_subtree", { scanId, path });
 }
 
 interface ScanCancelledPayload {
