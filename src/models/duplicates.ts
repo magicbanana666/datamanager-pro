@@ -66,11 +66,13 @@ export interface DuplicateResult {
   skipped: ScanSkip[];
 }
 
-export type DuplicatePhase = "collecting" | "comparing" | "hashing";
+/** Mirrors `HashJobPhase` in `src-tauri/src/models/hash_job.rs` - shared
+ * by the duplicate finder and folder comparison. */
+export type HashJobPhase = "collecting" | "comparing" | "hashing";
 
-export interface DuplicateProgress {
+export interface HashJobProgress {
   scanId: string;
-  phase: DuplicatePhase;
+  phase: HashJobPhase;
   filesFound: number;
   bytesToHash: number;
   bytesHashed: number;

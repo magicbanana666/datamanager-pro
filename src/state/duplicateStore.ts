@@ -5,15 +5,11 @@
  * result survives) when the user navigates away and back.
  */
 import { create } from "zustand";
-import {
-  cancelDuplicateScan,
-  generateDuplicateScanId,
-  startDuplicateScan,
-  subscribeDuplicateEvents,
-} from "@/api/duplicates";
+import { cancelDuplicateScan, generateDuplicateScanId, startDuplicateScan } from "@/api/duplicates";
+import { subscribeJobEvents } from "@/api/jobs";
 import { toAppError } from "@/api/backend";
 import type { AppError } from "@/models/backend";
-import type { DuplicateOptions, DuplicateProgress, DuplicateResult } from "@/models/duplicates";
+import type { DuplicateOptions, HashJobProgress, DuplicateResult } from "@/models/duplicates";
 import { toast } from "@/state/toastStore";
 import { formatBytes, formatNumber } from "@/utils/format";
 
@@ -22,7 +18,7 @@ export type DuplicateRunStatus = "idle" | "running" | "completed" | "cancelled" 
 interface DuplicateState {
   status: DuplicateRunStatus;
   scanId: string | null;
-  progress: DuplicateProgress | null;
+  progress: HashJobProgress | null;
   result: DuplicateResult | null;
   error: AppError | null;
 
@@ -49,7 +45,7 @@ export const useDuplicateStore = create<DuplicateState>((set, get) => {
 
       // Notified from here rather than a page hook: a run can finish
       // while the user is on another page, and should still say so.
-      unlisten = await subscribeDuplicateEvents(scanId, {
+      unlisten = await subscribeJobEvents<DuplicateResult>("duplicate", scanId, {
         onProgress: (progress) => {
           if (get().scanId === scanId) set({ progress });
         },

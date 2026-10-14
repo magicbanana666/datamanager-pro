@@ -8,9 +8,11 @@
 //! module layout doesn't need to change when real network scanning,
 //! scheduling and transfer engines are added.
 
+pub mod comparison;
 pub mod duplicates;
 pub mod errors;
 pub mod filesystem;
+pub mod hash_job;
 pub mod scan;
 pub mod storage;
 pub mod system;

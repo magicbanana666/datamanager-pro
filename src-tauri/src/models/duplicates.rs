@@ -2,9 +2,8 @@
 //! `services::duplicate_service` for the engine and
 //! `commands::duplicates` for how a run is started/streamed.
 
-use crate::models::scan::{ScanProgressState, ScanSkip};
+use crate::models::scan::ScanSkip;
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 
 /// What makes two files "duplicates". Mirrors `DuplicateCriteriaId` in
 /// `src/models/duplicates.ts`.
@@ -83,73 +82,3 @@ pub struct DuplicateResult {
 /// far more than anyone reviews, and the payload would freeze the
 /// webview the same way a whole-drive `scan-complete` once did.
 pub const MAX_GROUPS_IN_RESULT: usize = 5_000;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum DuplicatePhase {
-    /// Listing files under every location (the regular scan engines).
-    Collecting,
-    /// Hashing the first 64 KiB of every same-size candidate.
-    Comparing,
-    /// Hashing the full content of the candidates still matching.
-    Hashing,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DuplicateProgress {
-    pub scan_id: String,
-    pub phase: DuplicatePhase,
-    pub files_found: u64,
-    pub bytes_to_hash: u64,
-    pub bytes_hashed: u64,
-    pub current_path: String,
-    pub elapsed_ms: u64,
-}
-
-/// Shared runtime state for one duplicate run. `scan` carries the
-/// collect phase's counters, the cancel flag and skips, so the regular
-/// scan engines can run against it unchanged.
-pub struct DuplicateProgressState {
-    pub scan: ScanProgressState,
-    phase: AtomicU8,
-    pub bytes_to_hash: AtomicU64,
-    pub bytes_hashed: AtomicU64,
-}
-
-impl DuplicateProgressState {
-    pub fn new() -> Self {
-        Self {
-            scan: ScanProgressState::new(),
-            phase: AtomicU8::new(0),
-            bytes_to_hash: AtomicU64::new(0),
-            bytes_hashed: AtomicU64::new(0),
-        }
-    }
-
-    pub fn is_cancelled(&self) -> bool {
-        self.scan.is_cancelled()
-    }
-
-    pub fn phase(&self) -> DuplicatePhase {
-        match self.phase.load(Ordering::Relaxed) {
-            0 => DuplicatePhase::Collecting,
-            1 => DuplicatePhase::Comparing,
-            _ => DuplicatePhase::Hashing,
-        }
-    }
-
-    /// Starts a hashing phase: resets the byte counters so each phase's
-    /// progress bar runs 0-100% on its own.
-    pub fn begin_phase(&self, phase: DuplicatePhase, bytes_to_hash: u64) {
-        self.bytes_hashed.store(0, Ordering::Relaxed);
-        self.bytes_to_hash.store(bytes_to_hash, Ordering::Relaxed);
-        self.phase.store(phase as u8, Ordering::Relaxed);
-    }
-}
-
-impl Default for DuplicateProgressState {
-    fn default() -> Self {
-        Self::new()
-    }
-}

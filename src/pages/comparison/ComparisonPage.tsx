@@ -9,6 +9,7 @@ import {
   Info,
   Save,
   Trash2,
+  X,
 } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/cards/Card";
@@ -33,22 +34,13 @@ import {
   fileCountComparisonByType,
   sizeComparisonByType,
 } from "@/mock/comparison";
+import { FILE_TYPE_CATEGORIES } from "@/models/common";
 import type { ComparisonMode, ComparisonRow, ComparisonStatus } from "@/models/comparison";
+import type { HashJobProgress } from "@/models/duplicates";
+import { useComparisonStore } from "@/state/comparisonStore";
+import { categoryComparison, sideCategoryStats, toUiRows } from "@/utils/comparison";
 import { formatBytes, formatDate, formatNumber } from "@/utils/format";
-import { useSimulatedProgress } from "@/hooks/useSimulatedProgress";
 import { toast } from "@/state/toastStore";
-
-const TABS = [
-  { id: "summary", label: "Summary" },
-  { id: "differences", label: "Differences", badge: comparisonTotals.differentFiles },
-  { id: "left-only", label: "Left Only", badge: comparisonTotals.leftOnly },
-  { id: "right-only", label: "Right Only", badge: comparisonTotals.rightOnly },
-  { id: "identical", label: "Identical", badge: comparisonTotals.identicalFiles },
-  { id: "file-types", label: "File Types" },
-  { id: "timeline", label: "Timeline" },
-  { id: "size-differences", label: "Size Differences" },
-  { id: "filters", label: "Filters" },
-];
 
 const STATUS_MAP: Record<string, ComparisonStatus> = {
   differences: "different",
@@ -64,25 +56,78 @@ const STATUS_BADGE: Record<ComparisonStatus, { tone: "danger" | "info" | "succes
   "right-only": { tone: "info", label: "Right only" },
 };
 
+const PHASE_LABELS: Record<HashJobProgress["phase"], string> = {
+  collecting: "Listing files",
+  comparing: "Comparing",
+  hashing: "Comparing contents",
+};
+
+const CATEGORY_LABELS = FILE_TYPE_CATEGORIES.map((c) => c.label);
+
 export function ComparisonPage() {
-  const [locationA, setLocationA] = useState("D:\\Data\\Projects");
-  const [locationB, setLocationB] = useState("E:\\Archive\\Projects");
+  const run = useComparisonStore();
+  const [locationA, setLocationA] = useState(() => run.result?.a.location ?? "D:\\Data\\Projects");
+  const [locationB, setLocationB] = useState(() => run.result?.b.location ?? "E:\\Archive\\Projects");
   const [mode, setMode] = useState<ComparisonMode>("content-hash");
   const [options, setOptions] = useState({ includeSubfolders: true, ignoreTimestamps: false, ignoreSmallFiles: false });
   const [tab, setTab] = useState("summary");
   const [selectedRow, setSelectedRow] = useState<ComparisonRow | null>(null);
-  const [hasResults, setHasResults] = useState(true);
+  const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
 
-  const compare = useSimulatedProgress(() => {
-    setHasResults(true);
-    toast.success(`Comparison completed - ${formatNumber(comparisonRows.length)} entries compared.`);
-  });
+  const isReal = run.status === "completed" && !!run.result;
+  const running = run.status === "running";
+  const result = isReal ? run.result : null;
+
+  const allRows = useMemo(() => (result ? toUiRows(result) : comparisonRows), [result]);
+  const totals = result?.totals ?? comparisonTotals;
+  const summaryA = result
+    ? { ...result.a, lastModified: result.a.lastModified ?? "" }
+    : comparisonSummaryA;
+  const summaryB = result
+    ? { ...result.b, lastModified: result.b.lastModified ?? "" }
+    : comparisonSummaryB;
+  const fileTypesA = useMemo(() => (result ? sideCategoryStats(result.a) : comparisonFileTypesA), [result]);
+  const fileTypesB = useMemo(() => (result ? sideCategoryStats(result.b) : comparisonFileTypesB), [result]);
+  const byCategory = useMemo(
+    () => (result ? categoryComparison(result) : { bytes: sizeComparisonByType, files: fileCountComparisonByType }),
+    [result],
+  );
+
+  const tabs = [
+    { id: "summary", label: "Summary" },
+    { id: "differences", label: "Differences", badge: totals.differentFiles },
+    { id: "left-only", label: "Left Only", badge: totals.leftOnly },
+    { id: "right-only", label: "Right Only", badge: totals.rightOnly },
+    { id: "identical", label: "Identical", badge: totals.identicalFiles },
+    { id: "file-types", label: "File Types" },
+    { id: "timeline", label: "File Counts" },
+    { id: "size-differences", label: "Size Differences" },
+    { id: "filters", label: "Filters" },
+  ];
 
   const visibleRows = useMemo(() => {
-    if (!hasResults) return [];
     const status = STATUS_MAP[tab];
-    return status ? comparisonRows.filter((r) => r.status === status) : comparisonRows;
-  }, [tab, hasResults]);
+    return allRows.filter((r) => (!status || r.status === status) && !hiddenCategories.has(r.category));
+  }, [tab, allRows, hiddenCategories]);
+
+  const statusTotal = STATUS_MAP[tab]
+    ? {
+        different: totals.differentFiles,
+        "left-only": totals.leftOnly,
+        "right-only": totals.rightOnly,
+        identical: totals.identicalFiles,
+      }[STATUS_MAP[tab]]
+    : totals.differentFiles + totals.leftOnly + totals.rightOnly + totals.identicalFiles;
+
+  const progress = run.progress;
+  const percent =
+    progress && progress.phase !== "collecting" && progress.bytesToHash > 0
+      ? Math.min(100, (progress.bytesHashed / progress.bytesToHash) * 100)
+      : null;
+
+  function startComparison() {
+    void run.start(locationA, locationB, { mode, ...options });
+  }
 
   const columns: DataTableColumn<ComparisonRow>[] = [
     {
@@ -95,9 +140,9 @@ export function ComparisonPage() {
         return <Badge tone={b.tone}>{b.label}</Badge>;
       },
     },
-    { key: "name", header: "Name", width: 180, sortAccessor: (r) => r.name, render: (r) => r.name },
-    { key: "pathA", header: "Path A", width: 200, render: (r) => <span className="truncate text-fg-muted">{r.pathA ?? "-"}</span> },
-    { key: "pathB", header: "Path B", width: 200, render: (r) => <span className="truncate text-fg-muted">{r.pathB ?? "-"}</span> },
+    { key: "name", header: "Name", width: 180, sortAccessor: (r) => r.name, render: (r) => <span title={r.name}>{r.name}</span> },
+    { key: "pathA", header: "Path A", width: 200, render: (r) => <span className="truncate text-fg-muted" title={r.pathA ?? ""}>{r.pathA ?? "-"}</span> },
+    { key: "pathB", header: "Path B", width: 200, render: (r) => <span className="truncate text-fg-muted" title={r.pathB ?? ""}>{r.pathB ?? "-"}</span> },
     { key: "sizeA", header: "Size A", width: 90, align: "right", sortAccessor: (r) => r.sizeA ?? -1, render: (r) => (r.sizeA != null ? formatBytes(r.sizeA) : "-") },
     { key: "sizeB", header: "Size B", width: 90, align: "right", sortAccessor: (r) => r.sizeB ?? -1, render: (r) => (r.sizeB != null ? formatBytes(r.sizeB) : "-") },
     { key: "modA", header: "Modified A", width: 140, render: (r) => (r.modifiedA ? formatDate(r.modifiedA) : "-") },
@@ -137,55 +182,77 @@ export function ComparisonPage() {
               ]}
             />
             <Checkbox checked={options.includeSubfolders} onChange={(v) => setOptions((o) => ({ ...o, includeSubfolders: v }))} label="Include subfolders" />
-            <Checkbox checked={options.ignoreTimestamps} onChange={(v) => setOptions((o) => ({ ...o, ignoreTimestamps: v }))} label="Ignore timestamps" />
-            <Checkbox checked={options.ignoreSmallFiles} onChange={(v) => setOptions((o) => ({ ...o, ignoreSmallFiles: v }))} label="Ignore small files" />
-            <Button
-              variant="primary"
-              onClick={() => {
-                setHasResults(false);
-                compare.start(2.5);
-              }}
-              disabled={compare.status === "running"}
-            >
-              {compare.status === "running" ? `Comparing... ${compare.progress.toFixed(0)}%` : "Start Comparison"}
-            </Button>
-            {compare.status === "running" && <ProgressBar value={compare.progress} />}
+            <Checkbox
+              checked={options.ignoreTimestamps}
+              onChange={(v) => setOptions((o) => ({ ...o, ignoreTimestamps: v }))}
+              label="Ignore timestamps"
+              disabled={mode !== "size-timestamp"}
+            />
+            <Checkbox checked={options.ignoreSmallFiles} onChange={(v) => setOptions((o) => ({ ...o, ignoreSmallFiles: v }))} label="Ignore small files (< 4 KB)" />
+            {running ? (
+              <Button icon={X} onClick={() => void run.cancel()}>
+                Cancel
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={startComparison}>
+                Start Comparison
+              </Button>
+            )}
+            {running && (
+              <>
+                {percent !== null && <ProgressBar value={percent} />}
+                <span className="truncate text-[11px] text-fg-muted" title={progress?.currentPath}>
+                  {progress
+                    ? `${PHASE_LABELS[progress.phase]}${percent !== null ? ` ${percent.toFixed(0)}%` : ` - ${formatNumber(progress.filesFound)} files`}`
+                    : "Starting..."}
+                </span>
+              </>
+            )}
           </div>
         </Card>
       </div>
 
-      <Tabs tabs={TABS} active={tab} onChange={setTab} />
+      <div className="flex items-center gap-2">
+        <Tabs tabs={tabs} active={tab} onChange={setTab} />
+        {!isReal && <DemoBadge label="Demo Comparison" />}
+      </div>
 
       {tab === "summary" && (
         <div className="grid grid-cols-3 gap-3">
-          <Card title={`Location A — ${comparisonSummaryA.location}`}>
-            <DonutChart data={comparisonFileTypesA} centerLabel="Total Size" centerValue={formatBytes(comparisonSummaryA.totalBytes)} size={120} />
+          <Card title={`Location A — ${summaryA.location}`}>
+            <DonutChart data={fileTypesA} centerLabel="Total Size" centerValue={formatBytes(summaryA.totalBytes)} size={120} />
             <div className="mt-2 text-[11.5px] text-fg-subtle">
-              {formatNumber(comparisonSummaryA.files)} files · {formatNumber(comparisonSummaryA.folders)} folders
+              {formatNumber(summaryA.files)} files · {formatNumber(summaryA.folders)} folders
             </div>
           </Card>
           <Card title="Comparison Result">
             <dl className="grid grid-cols-[1fr_auto] gap-y-2 text-[12.5px]">
               <dt className="flex items-center gap-2 text-fg-muted"><Badge tone="success" dot /> Identical files</dt>
-              <dd className="text-right text-fg">{formatNumber(comparisonTotals.identicalFiles)}</dd>
+              <dd className="text-right text-fg">{formatNumber(totals.identicalFiles)}</dd>
               <dt className="flex items-center gap-2 text-fg-muted"><Badge tone="warning" dot /> Different files</dt>
-              <dd className="text-right text-fg">{formatNumber(comparisonTotals.differentFiles)}</dd>
+              <dd className="text-right text-fg">{formatNumber(totals.differentFiles)}</dd>
               <dt className="flex items-center gap-2 text-fg-muted"><Badge tone="info" dot /> Left only (A)</dt>
-              <dd className="text-right text-fg">{formatNumber(comparisonTotals.leftOnly)}</dd>
+              <dd className="text-right text-fg">{formatNumber(totals.leftOnly)}</dd>
               <dt className="flex items-center gap-2 text-fg-muted"><Badge tone="info" dot /> Right only (B)</dt>
-              <dd className="text-right text-fg">{formatNumber(comparisonTotals.rightOnly)}</dd>
+              <dd className="text-right text-fg">{formatNumber(totals.rightOnly)}</dd>
               <dt className="text-fg-muted">Different data</dt>
-              <dd className="text-right text-fg">{formatBytes(comparisonTotals.differentDataBytes)}</dd>
+              <dd className="text-right text-fg">{formatBytes(totals.differentDataBytes)}</dd>
               <dt className="text-fg-muted">Left only size</dt>
-              <dd className="text-right text-fg">{formatBytes(comparisonTotals.leftOnlyBytes)}</dd>
+              <dd className="text-right text-fg">{formatBytes(totals.leftOnlyBytes)}</dd>
               <dt className="text-fg-muted">Right only size</dt>
-              <dd className="text-right text-fg">{formatBytes(comparisonTotals.rightOnlyBytes)}</dd>
+              <dd className="text-right text-fg">{formatBytes(totals.rightOnlyBytes)}</dd>
             </dl>
+            {result && (
+              <p className="mt-2 text-[11.5px] text-fg-subtle">
+                Compared in {(result.elapsedMs / 1000).toFixed(1)} s
+                {result.skipped.length > 0 && ` · ${formatNumber(result.skipped.length)} unreadable items skipped`}
+              </p>
+            )}
           </Card>
-          <Card title={`Location B — ${comparisonSummaryB.location}`}>
-            <DonutChart data={comparisonFileTypesB} centerLabel="Total Size" centerValue={formatBytes(comparisonSummaryB.totalBytes)} size={120} />
+          <Card title={`Location B — ${summaryB.location}`}>
+            <DonutChart data={fileTypesB} centerLabel="Total Size" centerValue={formatBytes(summaryB.totalBytes)} size={120} />
             <div className="mt-2 text-[11.5px] text-fg-subtle">
-              {formatNumber(comparisonSummaryB.files)} files · {formatNumber(comparisonSummaryB.folders)} folders
+              {formatNumber(summaryB.files)} files · {formatNumber(summaryB.folders)} folders
             </div>
           </Card>
         </div>
@@ -194,10 +261,10 @@ export function ComparisonPage() {
       {tab === "file-types" && (
         <div className="grid grid-cols-2 gap-3">
           <Card title="Location A file types">
-            <DonutChart data={comparisonFileTypesA} centerLabel="Total Size" centerValue={formatBytes(comparisonSummaryA.totalBytes)} size={160} />
+            <DonutChart data={fileTypesA} centerLabel="Total Size" centerValue={formatBytes(summaryA.totalBytes)} size={160} />
           </Card>
           <Card title="Location B file types">
-            <DonutChart data={comparisonFileTypesB} centerLabel="Total Size" centerValue={formatBytes(comparisonSummaryB.totalBytes)} size={160} />
+            <DonutChart data={fileTypesB} centerLabel="Total Size" centerValue={formatBytes(summaryB.totalBytes)} size={160} />
           </Card>
         </div>
       )}
@@ -205,7 +272,7 @@ export function ComparisonPage() {
       {tab === "size-differences" && (
         <Card title="Size Comparison by File Type">
           <BarChartPanel
-            data={sizeComparisonByType}
+            data={byCategory.bytes}
             categoryKey="type"
             series={[
               { key: "a", label: "Location A", color: "var(--color-chart-1)" },
@@ -219,7 +286,7 @@ export function ComparisonPage() {
       {tab === "timeline" && (
         <Card title="File Count Comparison">
           <BarChartPanel
-            data={fileCountComparisonByType}
+            data={byCategory.files}
             categoryKey="type"
             series={[
               { key: "a", label: "Location A", color: "var(--color-chart-1)" },
@@ -232,10 +299,22 @@ export function ComparisonPage() {
       )}
 
       {tab === "filters" && (
-        <Card title="Comparison Filters">
+        <Card title="Show file types in the table below">
           <div className="grid grid-cols-3 gap-3">
-            {["Documents", "Images", "Videos", "Archives", "Executables", "Others"].map((c) => (
-              <Checkbox key={c} checked onChange={() => toast.demo()} label={c} />
+            {CATEGORY_LABELS.map((c) => (
+              <Checkbox
+                key={c}
+                checked={!hiddenCategories.has(c)}
+                onChange={(v) =>
+                  setHiddenCategories((prev) => {
+                    const next = new Set(prev);
+                    if (v) next.delete(c);
+                    else next.add(c);
+                    return next;
+                  })
+                }
+                label={c}
+              />
             ))}
           </div>
         </Card>
@@ -249,9 +328,13 @@ export function ComparisonPage() {
         // the identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md).
         bodyClassName="h-[280px] flex-none"
         action={
-          <div className="flex items-center gap-2">
-            <DemoBadge label="Demo Comparison" />
-            <Info size={13} className="text-fg-subtle" />
+          <div className="flex items-center gap-2 text-[11.5px] text-fg-subtle">
+            {isReal && statusTotal > visibleRows.length && hiddenCategories.size === 0 && (
+              <span>
+                Largest {formatNumber(visibleRows.length)} of {formatNumber(statusTotal)}
+              </span>
+            )}
+            <Info size={13} />
           </div>
         }
       >
@@ -261,11 +344,13 @@ export function ComparisonPage() {
           getRowId={(r) => r.id}
           selectedId={selectedRow?.id ?? null}
           onRowClick={setSelectedRow}
-          emptyMessage={hasResults ? "No entries in this category." : "Run a comparison to see results."}
+          emptyMessage={running ? "Comparing..." : "No entries in this category."}
           className="h-full border-0 rounded-none"
         />
       </Card>
 
+      {/* File actions (open, copy, move, delete, ...) arrive with the
+          Phase 6 file-operations engine - this phase is read-only. */}
       <div className="flex flex-wrap items-center gap-2">
         <Button icon={Eye} onClick={() => toast.demo()}>Open</Button>
         <Button icon={FolderOpen} onClick={() => toast.demo()}>Open Location</Button>

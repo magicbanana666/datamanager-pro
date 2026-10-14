@@ -17,22 +17,16 @@
 //! Read-only throughout: nothing here modifies, moves or deletes a file.
 
 use crate::models::duplicates::{
-    DuplicateCriteria, DuplicateFile, DuplicateGroup, DuplicateOptions, DuplicatePhase,
-    DuplicateProgressState, MAX_GROUPS_IN_RESULT,
+    DuplicateCriteria, DuplicateFile, DuplicateGroup, DuplicateOptions, MAX_GROUPS_IN_RESULT,
 };
+use crate::models::hash_job::{HashJobPhase, HashJobState};
 use crate::models::scan::{FsNode, NodeKind, ScanOptions};
-use crate::platform;
-use crate::services::scan_service;
+use crate::services::{hashing, scan_service};
 use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
-use std::fs::File;
-use std::io::Read;
-use std::sync::atomic::Ordering;
-use xxhash_rust::xxh3::Xxh3;
 
 /// How much of each file the cheap first hashing pass reads.
 const HEAD_BYTES: u64 = 64 * 1024;
-const READ_BUFFER: usize = 1024 * 1024;
 
 /// Every group found (unsorted, uncapped) plus how many candidate files
 /// were compared - the command layer sorts, caps and wraps it.
@@ -44,7 +38,7 @@ pub struct DuplicateOutcome {
 pub fn find_duplicates(
     roots: &[String],
     options: &DuplicateOptions,
-    state: &DuplicateProgressState,
+    state: &HashJobState,
 ) -> DuplicateOutcome {
     let files = collect_files(roots, options, state);
     let files_compared = files.len() as u64;
@@ -97,7 +91,7 @@ fn make_group(key: String, mut files: Vec<DuplicateFile>) -> DuplicateGroup {
 fn collect_files(
     roots: &[String],
     options: &DuplicateOptions,
-    state: &DuplicateProgressState,
+    state: &HashJobState,
 ) -> Vec<DuplicateFile> {
     let scan_options = ScanOptions {
         show_hidden: !options.ignore_hidden,
@@ -158,7 +152,7 @@ struct Hashed {
 
 fn exact_groups(
     files: Vec<DuplicateFile>,
-    state: &DuplicateProgressState,
+    state: &HashJobState,
 ) -> Vec<(String, Vec<DuplicateFile>)> {
     let same_size: Vec<DuplicateFile> = group_by(files, |f| f.size)
         .into_iter()
@@ -168,7 +162,7 @@ fn exact_groups(
     // Pass 1: head hash. For files no larger than HEAD_BYTES this *is*
     // the full content, so they're settled after this pass.
     let head_total = same_size.iter().map(|f| f.size.min(HEAD_BYTES)).sum();
-    state.begin_phase(DuplicatePhase::Comparing, head_total);
+    state.begin_phase(HashJobPhase::Comparing, head_total);
     let headed = hash_all(same_size, Some(HEAD_BYTES), state);
 
     let mut settled: Vec<(String, Vec<DuplicateFile>)> = Vec::new();
@@ -189,7 +183,7 @@ fn exact_groups(
 
     // Pass 2: full-content hash for the large candidates still matching.
     let full_total = need_full.iter().map(|f| f.size).sum();
-    state.begin_phase(DuplicatePhase::Hashing, full_total);
+    state.begin_phase(HashJobPhase::Hashing, full_total);
     let hashed = hash_all(need_full, None, state);
     for ((_, hash), members) in group_by(hashed, |h| (h.file.size, h.hash)) {
         settled.push((
@@ -219,11 +213,7 @@ fn distinct_physical_files(mut members: Vec<Hashed>) -> Vec<DuplicateFile> {
 /// Hashes every file in parallel, dropping (and recording as skipped)
 /// any that can't be read - a locked or vanished file can't be proven
 /// a duplicate.
-fn hash_all(
-    files: Vec<DuplicateFile>,
-    limit: Option<u64>,
-    state: &DuplicateProgressState,
-) -> Vec<Hashed> {
+fn hash_all(files: Vec<DuplicateFile>, limit: Option<u64>, state: &HashJobState) -> Vec<Hashed> {
     files
         .into_par_iter()
         .filter_map(|f| {
@@ -231,7 +221,7 @@ fn hash_all(
                 return None;
             }
             state.scan.set_current_path(&f.path);
-            match hash_file(&f.path, limit, state) {
+            match hashing::hash_file(&f.path, limit, state) {
                 Ok((hash, identity)) => Some(Hashed {
                     file: f,
                     hash,
@@ -246,30 +236,6 @@ fn hash_all(
             }
         })
         .collect()
-}
-
-fn hash_file(
-    path: &str,
-    limit: Option<u64>,
-    state: &DuplicateProgressState,
-) -> std::io::Result<(u128, Option<(u32, u64)>)> {
-    let file = File::open(path)?;
-    let identity = platform::current::file_identity(&file);
-    let mut reader = file.take(limit.unwrap_or(u64::MAX));
-    let mut hasher = Xxh3::new();
-    let mut buf = vec![0u8; READ_BUFFER];
-    loop {
-        if state.is_cancelled() {
-            return Err(std::io::Error::other("cancelled"));
-        }
-        let n = reader.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-        state.bytes_hashed.fetch_add(n as u64, Ordering::Relaxed);
-    }
-    Ok((hasher.digest128(), identity))
 }
 
 #[cfg(test)]
@@ -289,7 +255,7 @@ mod tests {
     }
 
     fn run(dir: &std::path::Path, criteria: DuplicateCriteria) -> Vec<DuplicateGroup> {
-        let state = DuplicateProgressState::new();
+        let state = HashJobState::new();
         let roots = vec![dir.to_string_lossy().to_string()];
         let mut groups = find_duplicates(&roots, &options(criteria), &state).groups;
         groups.sort_by(|a, b| a.files[0].path.cmp(&b.files[0].path));
@@ -355,7 +321,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub").join("only.txt"), b"unique").unwrap();
-        let state = DuplicateProgressState::new();
+        let state = HashJobState::new();
         let roots = vec![
             dir.path().to_string_lossy().to_string(),
             dir.path().join("sub").to_string_lossy().to_string(),
@@ -371,7 +337,7 @@ mod tests {
     #[ignore]
     fn duplicate_bench() {
         let target = std::env::var("DUP_BENCH_PATH").unwrap_or_else(|_| r"C:\Windows".to_string());
-        let state = DuplicateProgressState::new();
+        let state = HashJobState::new();
         let mut opts = options(DuplicateCriteria::Exact);
         opts.min_size = 1024 * 1024;
         let started = std::time::Instant::now();

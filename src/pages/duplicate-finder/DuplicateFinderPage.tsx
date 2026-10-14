@@ -13,7 +13,7 @@ import { DemoBadge } from "@/components/controls/DemoBadge";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { duplicateFileTypeStats, duplicateGroups as seedGroups } from "@/mock/duplicates";
-import type { DuplicateCriteriaId, DuplicateFileEntry, DuplicateGroup, DuplicateProgress } from "@/models/duplicates";
+import type { DuplicateCriteriaId, DuplicateFileEntry, DuplicateGroup, HashJobProgress } from "@/models/duplicates";
 import { pickFolder } from "@/api/dialog";
 import { useDuplicateStore } from "@/state/duplicateStore";
 import { toast } from "@/state/toastStore";
@@ -38,7 +38,7 @@ const TABS = [
 
 const MB = 1024 * 1024;
 
-const PHASE_LABELS: Record<DuplicateProgress["phase"], string> = {
+const PHASE_LABELS: Record<HashJobProgress["phase"], string> = {
   collecting: "Listing files",
   comparing: "Comparing",
   hashing: "Hashing",
@@ -46,7 +46,7 @@ const PHASE_LABELS: Record<DuplicateProgress["phase"], string> = {
 
 /** 0-100 for the hashing phases; `null` while listing files, which has
  * no known total to measure against. */
-function progressPercent(p: DuplicateProgress | null): number | null {
+function progressPercent(p: HashJobProgress | null): number | null {
   if (!p || p.phase === "collecting" || p.bytesToHash === 0) return null;
   return Math.min(100, (p.bytesHashed / p.bytesToHash) * 100);
 }

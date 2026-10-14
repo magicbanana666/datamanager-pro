@@ -11,41 +11,45 @@
 //! The caller generates the run id, for the same subscribe-before-start
 //! reason documented on `commands::scan::start_scan`.
 
-use crate::models::duplicates::{
-    DuplicateOptions, DuplicateProgress, DuplicateProgressState, DuplicateResult,
-};
+use super::{run_hash_job, JobRegistry};
+use crate::models::duplicates::{DuplicateOptions, DuplicateResult};
 use crate::models::errors::{AppError, AppErrorCode};
+use crate::models::hash_job::HashJobState;
 use crate::services::{duplicate_service, path_service};
 use serde::Serialize;
-use std::collections::HashMap;
-use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant};
+use std::sync::Arc;
+use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 
-#[derive(Default)]
-pub struct DuplicateRegistry {
-    runs: Mutex<HashMap<String, Arc<DuplicateProgressState>>>,
-}
-
-const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
-
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct CancelledPayload<'a> {
-    scan_id: &'a str,
+pub(crate) struct CancelledPayload<'a> {
+    pub scan_id: &'a str,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ErrorPayload<'a> {
-    scan_id: &'a str,
-    error: AppError,
+pub(crate) struct ErrorPayload<'a> {
+    pub scan_id: &'a str,
+    pub error: AppError,
 }
 
-/// Rejects synchronously if there's no location or any location isn't
-/// an existing folder - better to say so up front than to report "no
-/// duplicates" for a typo'd path.
+/// Validates every location up front (better to say so than to report
+/// "nothing found" for a typo'd path) and returns them normalized.
+pub(crate) fn validate_folders(roots: Vec<String>) -> Result<Vec<String>, AppError> {
+    let mut normalized = Vec::with_capacity(roots.len());
+    for root in roots {
+        let validation = path_service::validate(&root);
+        if !validation.exists || !validation.is_directory {
+            return Err(validation.error.unwrap_or_else(|| {
+                AppError::invalid_path(root.clone(), "This location is not a folder.")
+            }));
+        }
+        normalized.push(validation.normalized_path.unwrap_or(root));
+    }
+    Ok(normalized)
+}
+
 #[tauri::command]
 pub async fn start_duplicate_scan(
     app: AppHandle,
@@ -59,61 +63,19 @@ pub async fn start_duplicate_scan(
             "Select at least one location to search.",
         ));
     }
-    let mut normalized = Vec::with_capacity(roots.len());
-    for root in roots {
-        let validation = path_service::validate(&root);
-        if !validation.exists || !validation.is_directory {
-            return Err(validation.error.unwrap_or_else(|| {
-                AppError::invalid_path(root.clone(), "This location is not a folder.")
-            }));
-        }
-        normalized.push(validation.normalized_path.unwrap_or(root));
-    }
+    let roots = validate_folders(roots)?;
 
-    let state = Arc::new(DuplicateProgressState::new());
-    app.state::<DuplicateRegistry>()
-        .runs
-        .lock()
-        .unwrap()
-        .insert(scan_id.clone(), state.clone());
-
-    tracing::info!(scan_id = %scan_id, roots = ?normalized, criteria = ?options.criteria, "duplicate scan starting");
-    tauri::async_runtime::spawn(run_and_report(app, scan_id, normalized, options, state));
+    let state = Arc::new(HashJobState::new());
+    app.state::<JobRegistry>().insert(&scan_id, state.clone());
+    tracing::info!(scan_id = %scan_id, roots = ?roots, criteria = ?options.criteria, "duplicate scan starting");
+    tauri::async_runtime::spawn(run_and_report(app, scan_id, roots, options, state));
     Ok(())
 }
 
-/// A no-op if the run already finished.
 #[tauri::command]
 pub fn cancel_duplicate_scan(app: AppHandle, scan_id: String) -> Result<(), AppError> {
-    if let Some(state) = app
-        .state::<DuplicateRegistry>()
-        .runs
-        .lock()
-        .unwrap()
-        .get(&scan_id)
-    {
-        tracing::info!(scan_id = %scan_id, "duplicate scan cancellation requested");
-        state.scan.cancel();
-    }
+    app.state::<JobRegistry>().cancel(&scan_id);
     Ok(())
-}
-
-fn emit_progress(app: &AppHandle, scan_id: &str, state: &DuplicateProgressState, started: Instant) {
-    let progress = DuplicateProgress {
-        scan_id: scan_id.to_string(),
-        phase: state.phase(),
-        files_found: state.scan.files.load(Ordering::Relaxed),
-        bytes_to_hash: state.bytes_to_hash.load(Ordering::Relaxed),
-        bytes_hashed: state.bytes_hashed.load(Ordering::Relaxed),
-        current_path: state
-            .scan
-            .current_path
-            .try_lock()
-            .map(|p| p.clone())
-            .unwrap_or_default(),
-        elapsed_ms: started.elapsed().as_millis() as u64,
-    };
-    let _ = app.emit("duplicate-progress", &progress);
 }
 
 async fn run_and_report(
@@ -121,28 +83,18 @@ async fn run_and_report(
     scan_id: String,
     roots: Vec<String>,
     options: DuplicateOptions,
-    state: Arc<DuplicateProgressState>,
+    state: Arc<HashJobState>,
 ) {
     let started = Instant::now();
-    let blocking_state = state.clone();
-    let mut handle = tokio::task::spawn_blocking(move || {
-        duplicate_service::find_duplicates(&roots, &options, &blocking_state)
-    });
-
-    let mut ticker = tokio::time::interval(PROGRESS_INTERVAL);
-    ticker.tick().await;
-    let outcome = loop {
-        tokio::select! {
-            result = &mut handle => break result,
-            _ = ticker.tick() => emit_progress(&app, &scan_id, &state, started),
-        }
-    };
-
-    app.state::<DuplicateRegistry>()
-        .runs
-        .lock()
-        .unwrap()
-        .remove(&scan_id);
+    let work_state = state.clone();
+    let outcome = run_hash_job(
+        &app,
+        "duplicate-progress",
+        &scan_id,
+        state.clone(),
+        move || duplicate_service::find_duplicates(&roots, &options, &work_state),
+    )
+    .await;
     let elapsed_ms = started.elapsed().as_millis() as u64;
 
     match outcome {
