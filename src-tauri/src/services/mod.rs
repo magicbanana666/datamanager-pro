@@ -3,6 +3,8 @@
 //! marshalling + `spawn_blocking`); the actual read-only I/O logic
 //! lives here so it stays independently testable.
 
+#[cfg(test)]
+mod copy_bench;
 pub mod comparison_service;
 pub mod duplicate_service;
 pub mod filesystem_service;

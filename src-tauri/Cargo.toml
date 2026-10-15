@@ -58,6 +58,9 @@ windows = { version = "0.61", features = [
   "Win32_Security_Authorization",
   "Win32_UI_Shell",
   "Win32_NetworkManagement_NetManagement",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Threading",
 ] }
 
 [dev-dependencies]

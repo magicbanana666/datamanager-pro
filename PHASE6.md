@@ -138,3 +138,40 @@ folders.
 - The Recycle Bin isn't available on network shares; deletions there
   fall back to permanent deletion for sync, and are refused for
   Duplicate Finder/Compare Locations' Delete.
+
+## Copy engine performance
+
+Files are copied by size:
+
+| Size | How | Safety |
+|---|---|---|
+| 16 MB and up | Native **direct I/O** (`platform/windows/directio.rs`): unbuffered (`FILE_FLAG_NO_BUFFERING`, bypassing the Windows cache), asynchronous with several sector-aligned requests in flight (`FILE_FLAG_OVERLAPPED`), destination **pre-allocated** to its full size | `.dmp-part`, renamed into place when complete; journal checkpoint every 64 MB, resumes mid-file; hashed on the same buffers for verification |
+| Smaller, new | The kernel's copy (`CopyFileExW`) straight to the final name | Removed on error or stop; after a crash the journal copies it again (or Discard removes it) |
+| Smaller, replacing a file | `CopyFileExW` to `.dmp-part`, then renamed | The existing file is never half-overwritten |
+
+Scheduling adapts to the storage on both sides (seek-penalty query):
+large files 2 at a time between SSDs, 1 at a time when a hard disk is
+involved (16 MB x 2 requests), network 4 MB x 8 requests; small files 8
+at a time. If a volume refuses unbuffered I/O, that file falls back to
+a buffered copy. The transfer log says which tuning was chosen.
+
+Benchmark (`npm run bench:copy`, `services/copy_bench.rs`): 4 x 1 GB +
+2000 files of 16-512 KB on one NVMe SSD (C: to C:), the source rewritten
+uncached before every run so no tool reads from RAM; "on disk" includes
+flushing everything the tool left in the cache.
+
+| Tool | Returned (s) | On disk (s) |
+|---|---|---|
+| DataManager Pro (new) | 4.8 | **7.0-7.1** |
+| robocopy /MT:8 | 3.4-3.5 | 7.3-14.0 |
+| robocopy /J /MT:8 | 2.8 | 12.1-12.2 |
+| DataManager Pro (old, buffered) | 8.6-8.7 | 11.2-11.3 |
+| Explorer (shell copy engine) | 26.4-26.8 | 28.5-29.2 |
+
+Large files alone: 2.0 s for 4 GB (~2 GB/s) against robocopy's 2.5 s
+and Explorer's 5.0 s. robocopy "returns" sooner because it leaves data
+in the cache to be written later; measured until the data is on disk,
+the new engine is the fastest and the most consistent. Small files are
+bound by the file system and Defender's scan of each new file - the
+.dmp-part rename was dropped for new small files because it made
+Defender scan every file twice.

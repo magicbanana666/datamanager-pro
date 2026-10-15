@@ -40,9 +40,17 @@ const COPY_BUFFER: usize = 1024 * 1024;
 /// continues from here instead of starting over.
 const CHECKPOINT_BYTES: u64 = 64 * 1024 * 1024;
 pub const PART_SUFFIX: &str = ".dmp-part";
-/// Parallel copies: enough to hide per-file latency on many small files
-/// (and network shares) without thrashing a spinning disk.
-const COPY_THREADS: usize = 4;
+/// Small files copied at once: for them the cost is opening and closing,
+/// not bandwidth, so parallelism hides the latency.
+const SMALL_FILE_THREADS: usize = 8;
+/// Files at least this big use native direct I/O and are scheduled per
+/// medium (`copy_tuning`).
+pub(crate) const DIRECT_MIN_BYTES: u64 = 16 * 1024 * 1024;
+const MIB: usize = 1024 * 1024;
+/// Benchmark switch (services::copy_bench): the old buffered path for
+/// every file, to compare against direct I/O.
+#[cfg(test)]
+pub(crate) static FORCE_BUFFERED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 /// Files at least this big report their own progress.
 const ACTIVE_MIN_BYTES: u64 = 4 * 1024 * 1024;
 /// Per-file log lines are only written for jobs this small.
@@ -717,6 +725,9 @@ struct Executor<'a> {
     resuming: bool,
     verbose: bool,
     outcome: Mutex<ExecuteOutcome>,
+    /// Direct I/O request size and requests in flight.
+    #[cfg_attr(not(windows), allow(dead_code))]
+    direct_tuning: (usize, usize),
 }
 
 enum Finished {
@@ -751,6 +762,8 @@ pub fn execute(
         }
     }
 
+    let (direct_tuning, large_parallel, described) = copy_tuning(request);
+    state.log(described);
     let exec = Executor {
         request,
         state,
@@ -759,6 +772,7 @@ pub fn execute(
         resuming: !resume.done.is_empty() || !resume.partial.is_empty(),
         verbose: items.len() <= MAX_PER_FILE_LOG,
         outcome: Mutex::new(ExecuteOutcome::default()),
+        direct_tuning,
     };
     let pending = |item: &&PlanItem| !resume.done.contains(&item.id);
 
@@ -770,21 +784,19 @@ pub fn execute(
         exec.run(item);
     }
 
-    let copies: Vec<&PlanItem> = items.iter().filter(|i| i.action.copies()).filter(pending).collect();
-    match rayon::ThreadPoolBuilder::new().num_threads(COPY_THREADS).stack_size(16 * 1024 * 1024).build() {
-        Ok(pool) => pool.install(|| {
-            copies.par_iter().for_each(|item| {
-                if state.wait_while_paused() {
-                    exec.run(item);
-                }
-            })
-        }),
-        Err(_) => copies.iter().for_each(|item| {
-            if state.wait_while_paused() {
-                exec.run(item);
-            }
-        }),
-    }
+    // Small files many at once; large ones a few at a time (one on a
+    // spinning disk, where parallel streams just make it seek).
+    let (small, large): (Vec<&PlanItem>, Vec<&PlanItem>) = items
+        .iter()
+        .filter(|i| i.action.copies())
+        .filter(pending)
+        .partition(|i| i.size < DIRECT_MIN_BYTES);
+    #[cfg(test)]
+    let small_threads = std::env::var("DMP_BENCH_SMALL_THREADS").ok().and_then(|v| v.parse().ok()).unwrap_or(SMALL_FILE_THREADS);
+    #[cfg(not(test))]
+    let small_threads = SMALL_FILE_THREADS;
+    run_parallel(&small, small_threads, &exec);
+    run_parallel(&large, large_parallel, &exec);
 
     state.set_phase(TransferPhase::Deleting);
     for item in items
@@ -803,6 +815,102 @@ pub fn execute(
         remove_emptied_folders(request, items);
     }
     exec.outcome.into_inner().unwrap()
+}
+
+/// Benchmark experiments: DMP_BENCH_CHUNK_MB, _DEPTH, _PARALLEL.
+#[cfg(test)]
+fn bench_overrides(tuning: (usize, usize), parallel: usize) -> ((usize, usize), usize) {
+    let get = |k: &str| std::env::var(k).ok().and_then(|v| v.parse::<usize>().ok());
+    (
+        (get("DMP_BENCH_CHUNK_MB").map_or(tuning.0, |m| m * MIB), get("DMP_BENCH_DEPTH").unwrap_or(tuning.1)),
+        get("DMP_BENCH_PARALLEL").unwrap_or(parallel),
+    )
+}
+
+#[cfg(test)]
+fn force_buffered() -> bool {
+    FORCE_BUFFERED.load(Ordering::Relaxed)
+}
+
+#[cfg(not(test))]
+fn force_buffered() -> bool {
+    false
+}
+
+/// Sets a file's times through a handle opened for attributes only.
+fn set_file_times(path: &Path, times: fs::FileTimes) -> std::io::Result<()> {
+    let mut options = fs::OpenOptions::new();
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        options.access_mode(0x0100); // FILE_WRITE_ATTRIBUTES
+    }
+    #[cfg(not(windows))]
+    options.write(true);
+    options.open(path)?.set_times(times)
+}
+
+/// Runs `items` on `threads` threads (in order when 1).
+fn run_parallel(items: &[&PlanItem], threads: usize, exec: &Executor) {
+    let run = |item: &&PlanItem| {
+        if exec.state.wait_while_paused() {
+            exec.run(item);
+        }
+    };
+    if threads <= 1 || items.len() <= 1 {
+        items.iter().for_each(run);
+        return;
+    }
+    match rayon::ThreadPoolBuilder::new().num_threads(threads).stack_size(16 * MIB).build() {
+        Ok(pool) => pool.install(|| items.par_iter().for_each(run)),
+        Err(_) => items.iter().for_each(run),
+    }
+}
+
+/// Direct I/O tuning and how many large files to copy at once, from the
+/// storage on both sides: ((request size, requests in flight), large
+/// files at once, a log line saying so).
+fn copy_tuning(request: &TransferRequest) -> ((usize, usize), usize, String) {
+    #[cfg(windows)]
+    {
+        use crate::platform::windows::directio::{medium_of, Medium};
+        let src = medium_of(Path::new(&request.source));
+        let dst = medium_of(Path::new(&request.destination));
+        let name = |m: Medium| match m {
+            Medium::Solid => "SSD",
+            Medium::Rotational => "hard disk",
+            Medium::Network => "network",
+            Medium::Unknown => "unknown storage",
+        };
+        let either = |m: Medium| src == m || dst == m;
+        let (tuning, parallel) = if either(Medium::Rotational) {
+            ((16 * MIB, 2), 1)
+        } else if either(Medium::Network) {
+            ((4 * MIB, 8), 2)
+        } else if src == Medium::Solid && dst == Medium::Solid {
+            ((8 * MIB, 4), 2)
+        } else {
+            ((8 * MIB, 4), 1)
+        };
+        let described = format!(
+            "Copy engine: {} to {} - files of {} MB+ by direct I/O ({} MB x {} in flight, {} at a time), smaller ones {} at a time.",
+            name(src),
+            name(dst),
+            DIRECT_MIN_BYTES / MIB as u64,
+            tuning.0 / MIB,
+            tuning.1,
+            parallel,
+            SMALL_FILE_THREADS
+        );
+        #[cfg(test)]
+        let (tuning, parallel) = bench_overrides(tuning, parallel);
+        (tuning, parallel, described)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = request;
+        ((8 * MIB, 4), 2, "Copy engine: buffered copies.".to_string())
+    }
 }
 
 /// After a move: removes the source folders it emptied, deepest first,
@@ -956,14 +1064,21 @@ impl Executor<'_> {
     }
 
     /// Copies `from` to `to` through a `.dmp-part` file; returns whether
-    /// the copy was verified.
+    /// the copy was verified. Large files go through native unbuffered,
+    /// overlapped I/O (`platform::windows::directio`); small ones - and
+    /// anything direct I/O can't handle - through a plain buffered copy.
     fn copy_contents(&self, item: &PlanItem, from: &Path, to: &Path) -> Result<bool, String> {
         let options = &self.request.options;
         let state = self.state;
-        let part = part_path(to);
-        let mut input = File::open(from).map_err(|e| format!("opening the source: {e}"))?;
-        let metadata = input.metadata().map_err(|e| e.to_string())?;
+        let metadata = fs::metadata(from).map_err(|e| format!("opening the source: {e}"))?;
         let size = metadata.len();
+        // Small files on Windows are copied by the kernel (CopyFileExW).
+        // A new one goes straight to its final name: the extra rename of a
+        // .dmp-part file made Defender scan every file twice, doubling the
+        // time for thousands of small files. An existing file is still
+        // replaced through .dmp-part, so it's never left half-overwritten.
+        let kernel_copy = cfg!(windows) && size < DIRECT_MIN_BYTES && !force_buffered();
+        let part = if kernel_copy && !to.exists() { to.to_path_buf() } else { part_path(to) };
 
         // Resume a large copy from its last checkpoint - only if the
         // source still looks the way the plan saw it.
@@ -974,75 +1089,14 @@ impl Executor<'_> {
             .copied()
             .filter(|_| size == item.size)
             .filter(|&offset| fs::metadata(&part).is_ok_and(|m| m.len() >= offset));
-        let mut output = match resume_at {
-            Some(offset) => {
-                let file = fs::OpenOptions::new()
-                    .write(true)
-                    .open(&part)
-                    .map_err(|e| format!("reopening the partial copy: {e}"))?;
-                file.set_len(offset).map_err(|e| e.to_string())?;
-                input.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
-                file
-            }
-            None => File::create(&part).map_err(|e| format!("creating the destination file: {e}"))?,
-        };
-        let mut written = resume_at.unwrap_or(0);
-        if written > 0 {
-            output.seek(SeekFrom::Start(written)).map_err(|e| e.to_string())?;
-            state.bytes_done.fetch_add(written, Ordering::Relaxed);
-            state.log(format!("Resuming {} at {} MB", item.relative_path, written / (1024 * 1024)));
+        if let Some(offset) = resume_at.filter(|o| *o > 0) {
+            state.log(format!("Resuming {} at {} MB", item.relative_path, offset / (1024 * 1024)));
         }
-        let started_at = written;
-
-        // Hash while copying, so verifying only has to re-read the copy.
-        let mut source_hash = (options.verify_after_transfer && written == 0).then(Xxh3::new);
-        let track = size >= ACTIVE_MIN_BYTES;
-        if track {
+        if size >= ACTIVE_MIN_BYTES {
             state.push_update(item.id, ItemStatus::InProgress, None);
         }
-        let mut buf = vec![0u8; COPY_BUFFER];
-        let mut since_checkpoint = 0u64;
-        let result: Result<(), String> = (|| {
-            loop {
-                if !state.wait_while_paused() {
-                    // Keep what's on disk for a later resume.
-                    let _ = output.sync_data();
-                    self.journal.checkpoint(item.id, written);
-                    return Err("cancelled".into());
-                }
-                let n = input.read(&mut buf).map_err(|e| format!("reading: {e}"))?;
-                if n == 0 {
-                    return Ok(());
-                }
-                output.write_all(&buf[..n]).map_err(|e| format!("writing: {e}"))?;
-                if let Some(h) = source_hash.as_mut() {
-                    h.update(&buf[..n]);
-                }
-                written += n as u64;
-                since_checkpoint += n as u64;
-                state.bytes_done.fetch_add(n as u64, Ordering::Relaxed);
-                if track {
-                    state.set_active(item.id, written, size);
-                }
-                if since_checkpoint >= CHECKPOINT_BYTES {
-                    since_checkpoint = 0;
-                    if output.sync_data().is_ok() {
-                        self.journal.checkpoint(item.id, written);
-                    }
-                }
-            }
-        })();
-        if let Err(e) = result {
-            if e != "cancelled" {
-                state.bytes_done.fetch_sub(written - started_at, Ordering::Relaxed);
-                drop(output);
-                let _ = fs::remove_file(&part);
-            }
-            return Err(e);
-        }
-        output.flush().map_err(|e| e.to_string())?;
 
-        if options.preserve_timestamps {
+        let times = options.preserve_timestamps.then(|| {
             let mut times = fs::FileTimes::new();
             if let Ok(t) = metadata.modified() {
                 times = times.set_modified(t);
@@ -1055,17 +1109,40 @@ impl Executor<'_> {
                 use std::os::windows::fs::FileTimesExt;
                 times = times.set_created(t);
             }
-            if let Err(e) = output.set_times(times) {
-                state.log(format!("WARNING {}: keeping timestamps failed: {e}", to.display()));
+            times
+        });
+
+        #[cfg(windows)]
+        let direct = if size >= DIRECT_MIN_BYTES && !force_buffered() {
+            self.stream_direct(item, from, &part, size, resume_at)?
+        } else {
+            None
+        };
+        #[cfg(not(windows))]
+        let direct: Option<Option<u128>> = None;
+        let direct = match direct {
+            None if kernel_copy => Some(self.copy_by_kernel(from, &part, size)?),
+            other => other,
+        };
+        let source_hash = match direct {
+            Some(hash) => {
+                // The copy has closed its handles: reopen once, for the
+                // attributes only (no data access, so nothing rescans it).
+                // Without "preserve timestamps" the copy gets the time now.
+                let times = times.unwrap_or_else(|| fs::FileTimes::new().set_modified(std::time::SystemTime::now()));
+                if let Err(e) = set_file_times(&part, times) {
+                    state.log(format!("WARNING {}: keeping timestamps failed: {e}", to.display()));
+                }
+                hash
             }
-        }
-        drop(output);
+            None => self.stream_buffered(item, from, &part, size, resume_at, times)?,
+        };
 
         let mut verified = false;
         if options.verify_after_transfer {
             state.set_current_file(&format!("Verifying {}", to.display()));
             let expected = match source_hash {
-                Some(h) => Ok(h.digest128()),
+                Some(h) => Ok(h),
                 None => hash_path(from, state),
             };
             let actual = hash_path(&part, state);
@@ -1085,15 +1162,26 @@ impl Executor<'_> {
             }
         }
 
-        if to.exists() {
+        if part != to && to.exists() {
             platform::current::clear_readonly(to);
         }
+        if part != to {
         fs::rename(&part, to).map_err(|e| {
             let _ = fs::remove_file(&part);
             format!("replacing the destination file: {e}")
         })?;
-        if let Err(e) = platform::current::copy_attributes(from, to) {
-            state.log(format!("WARNING {}: {e}", to.display()));
+        }
+        // A new file is already "archive"; only read-only/hidden/system/
+        // not-indexed need setting - skipping the call matters with
+        // thousands of small files.
+        #[cfg(windows)]
+        let attributes_to_copy = !kernel_copy && std::os::windows::fs::MetadataExt::file_attributes(&metadata) & 0x2007 != 0;
+        #[cfg(not(windows))]
+        let attributes_to_copy = true;
+        if attributes_to_copy {
+            if let Err(e) = platform::current::copy_attributes(from, to) {
+                state.log(format!("WARNING {}: {e}", to.display()));
+            }
         }
         if options.preserve_permissions {
             if let Err(e) = platform::current::copy_dacl(from, to) {
@@ -1101,6 +1189,185 @@ impl Executor<'_> {
             }
         }
         Ok(verified)
+    }
+
+    /// A small file by the kernel's own copy (CopyFileExW: data,
+    /// attributes and modified time in one call). No hash on the way, so
+    /// verification re-reads both.
+    fn copy_by_kernel(&self, from: &Path, target: &Path, size: u64) -> Result<Option<u128>, String> {
+        if target.exists() {
+            platform::current::clear_readonly(target);
+        }
+        if let Err(e) = fs::copy(from, target) {
+            let _ = fs::remove_file(target);
+            return Err(format!("copying: {e}"));
+        }
+        self.state.bytes_done.fetch_add(size, Ordering::Relaxed);
+        Ok(None)
+    }
+
+    /// Counts resumed bytes as done; returns the resume offset.
+    fn count_resumed(&self, resume_at: Option<u64>) -> u64 {
+        let offset = resume_at.unwrap_or(0);
+        self.state.bytes_done.fetch_add(offset, Ordering::Relaxed);
+        offset
+    }
+
+    /// The plain, buffered copy. Returns the source's hash when it could
+    /// be computed along the way (a fresh copy with verification on).
+    fn stream_buffered(
+        &self,
+        item: &PlanItem,
+        from: &Path,
+        part: &Path,
+        size: u64,
+        resume_at: Option<u64>,
+        times: Option<fs::FileTimes>,
+    ) -> Result<Option<u128>, String> {
+        let state = self.state;
+        let mut input = File::open(from).map_err(|e| format!("opening the source: {e}"))?;
+        let mut output = match resume_at {
+            Some(offset) => {
+                let file = fs::OpenOptions::new()
+                    .write(true)
+                    .open(part)
+                    .map_err(|e| format!("reopening the partial copy: {e}"))?;
+                file.set_len(offset).map_err(|e| e.to_string())?;
+                input.seek(SeekFrom::Start(offset)).map_err(|e| e.to_string())?;
+                file
+            }
+            None => File::create(part).map_err(|e| format!("creating the destination file: {e}"))?,
+        };
+        let started_at = self.count_resumed(resume_at);
+        let mut written = started_at;
+        if written > 0 {
+            output.seek(SeekFrom::Start(written)).map_err(|e| e.to_string())?;
+        }
+        // Hash while copying, so verifying only has to re-read the copy.
+        let mut source_hash = (self.request.options.verify_after_transfer && written == 0).then(Xxh3::new);
+        let track = size >= ACTIVE_MIN_BYTES;
+        // Sized to the file: a fresh 1 MB zeroed buffer per small file
+        // was measurable with thousands of them.
+        let mut buf = vec![0u8; (size as usize).clamp(4096, COPY_BUFFER)];
+        let mut since_checkpoint = 0u64;
+        let result: Result<(), String> = (|| loop {
+            if !state.wait_while_paused() {
+                // Keep what's on disk for a later resume.
+                let _ = output.sync_data();
+                self.journal.checkpoint(item.id, written);
+                return Err("cancelled".into());
+            }
+            let n = input.read(&mut buf).map_err(|e| format!("reading: {e}"))?;
+            if n == 0 {
+                return Ok(());
+            }
+            output.write_all(&buf[..n]).map_err(|e| format!("writing: {e}"))?;
+            if let Some(h) = source_hash.as_mut() {
+                h.update(&buf[..n]);
+            }
+            written += n as u64;
+            since_checkpoint += n as u64;
+            state.bytes_done.fetch_add(n as u64, Ordering::Relaxed);
+            if track {
+                state.set_active(item.id, written, size);
+            }
+            if since_checkpoint >= CHECKPOINT_BYTES {
+                since_checkpoint = 0;
+                if output.sync_data().is_ok() {
+                    self.journal.checkpoint(item.id, written);
+                }
+            }
+        })();
+        if let Err(e) = result {
+            if e != "cancelled" {
+                state.bytes_done.fetch_sub(written - started_at, Ordering::Relaxed);
+                drop(output);
+                let _ = fs::remove_file(part);
+            }
+            return Err(e);
+        }
+        output.flush().map_err(|e| e.to_string())?;
+        // On the open handle: no second open just for the times.
+        if let Some(times) = times {
+            if let Err(e) = output.set_times(times) {
+                state.log(format!("WARNING {}: keeping timestamps failed: {e}", part.display()));
+            }
+        }
+        Ok(source_hash.map(|h| h.digest128()))
+    }
+
+    /// The native direct-I/O copy. `Ok(None)`: direct I/O isn't possible
+    /// for this file or volume - use the buffered copy instead.
+    #[cfg(windows)]
+    fn stream_direct(&self, item: &PlanItem, from: &Path, part: &Path, size: u64, resume_at: Option<u64>) -> Result<Option<Option<u128>>, String> {
+        use crate::platform::windows::directio::{copy_direct, CopySink, DirectCopy};
+
+        struct Sink<'a, 'b> {
+            exec: &'a Executor<'b>,
+            id: u32,
+            size: u64,
+            hash: Option<Xxh3>,
+            last_checkpoint: u64,
+            counted: u64,
+        }
+        impl CopySink for Sink<'_, '_> {
+            fn data(&mut self, chunk: &[u8]) -> bool {
+                if !self.exec.state.wait_while_paused() {
+                    return false;
+                }
+                if let Some(h) = self.hash.as_mut() {
+                    h.update(chunk);
+                }
+                true
+            }
+            fn written(&mut self, total: u64) {
+                let state = self.exec.state;
+                state.bytes_done.fetch_add(total - self.counted, Ordering::Relaxed);
+                self.counted = total;
+                if self.size >= ACTIVE_MIN_BYTES {
+                    state.set_active(self.id, total, self.size);
+                }
+                // Unbuffered writes are on the disk once complete: no
+                // flush needed before journaling the offset.
+                if total - self.last_checkpoint >= CHECKPOINT_BYTES {
+                    self.last_checkpoint = total;
+                    self.exec.journal.checkpoint(self.id, total);
+                }
+            }
+        }
+
+        let (chunk, depth) = self.direct_tuning;
+        // Direct I/O resumes on a sector boundary (journaled checkpoints
+        // already are; 64 KB covers every sector size).
+        let started_at = self.count_resumed(resume_at.map(|o| o / (64 * 1024) * (64 * 1024)));
+        let mut sink = Sink {
+            exec: self,
+            id: item.id,
+            size,
+            hash: (self.request.options.verify_after_transfer && started_at == 0).then(Xxh3::new),
+            last_checkpoint: started_at,
+            counted: started_at,
+        };
+        let job = DirectCopy { from, to: part, size, resume_at: started_at, chunk, depth };
+        match copy_direct(&job, &mut sink) {
+            Ok(_) => Ok(Some(sink.hash.map(|h| h.digest128()))),
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {
+                self.journal.checkpoint(item.id, sink.counted);
+                Err("cancelled".into())
+            }
+            Err(e) => {
+                let counted = sink.counted;
+                self.state.bytes_done.fetch_sub(counted, Ordering::Relaxed);
+                // ERROR_INVALID_FUNCTION / NOT_SUPPORTED / INVALID_PARAMETER:
+                // a file system or share that refuses unbuffered I/O.
+                if counted == started_at && matches!(e.raw_os_error(), Some(1 | 50 | 87)) {
+                    self.state.log(format!("{}: direct I/O unavailable ({e}), using a buffered copy", item.relative_path));
+                    return Ok(None);
+                }
+                let _ = fs::remove_file(part);
+                Err(format!("copying: {e}"))
+            }
+        }
     }
 }
 
@@ -1416,6 +1683,42 @@ mod tests {
         assert_eq!(outcome.error_count, 0, "{:?}", outcome.errors);
         assert_eq!(outcome.files_verified, 1);
         assert_eq!(fs::read(dst.path().join("big.bin")).unwrap(), data);
+        assert_eq!(state.bytes_done.load(Ordering::Relaxed), data.len() as u64);
+    }
+
+    /// Files of DIRECT_MIN_BYTES and up take the direct-I/O path.
+    #[cfg(windows)]
+    #[test]
+    fn large_files_copy_verify_and_resume_through_direct_io() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        let data: Vec<u8> = (0..(DIRECT_MIN_BYTES as usize + 3_456_789)).map(|i| (i % 249) as u8).collect();
+        fs::write(src.path().join("big.iso"), &data).unwrap();
+        let mut req = request(src.path(), dst.path(), TransferMode::Copy, CollisionPolicy::SkipSame);
+        req.options.verify_after_transfer = true;
+
+        let (_, outcome) = run(&req, None);
+        assert_eq!(outcome.error_count, 0, "{:?}", outcome.errors);
+        assert_eq!(outcome.files_verified, 1);
+        assert_eq!(fs::read(dst.path().join("big.iso")).unwrap(), data);
+
+        // Resume: half the file already in the part file, journaled.
+        fs::remove_file(dst.path().join("big.iso")).unwrap();
+        let state = TransferState::new();
+        let item = analyze(&req, None, &state).items[0].clone();
+        let half = 8 * 1024 * 1024;
+        fs::write(dst.path().join("big.iso.dmp-part"), &data[..half]).unwrap();
+        let mut resume = JournalProgress::default();
+        resume.partial.insert(item.id, half as u64);
+        let dir = tempfile::tempdir().unwrap();
+        let journal = Journal::create(
+            dir.path(),
+            &JournalHeader { job_id: "d".into(), request: req.clone(), started_at: String::new(), items: vec![item.clone()] },
+        )
+        .unwrap();
+        let outcome = execute(&req, &[item], &journal, &resume, &state);
+        assert_eq!(outcome.error_count, 0, "{:?}", outcome.errors);
+        assert_eq!(fs::read(dst.path().join("big.iso")).unwrap(), data);
         assert_eq!(state.bytes_done.load(Ordering::Relaxed), data.len() as u64);
     }
 

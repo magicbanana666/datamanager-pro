@@ -343,6 +343,22 @@ pub fn discard_interrupted_transfer(app: AppHandle, job_id: String) -> Result<()
             };
             let _ = std::fs::remove_file(format!("{target}{}", transfer_service::PART_SUFFIX));
         }
+        // Small new files are copied straight to their final name: one
+        // the job didn't finish may be half-written. Removed only while
+        // its source still exists, so a finished move is never undone.
+        for item in header.items.iter().filter(|i| {
+            !progress.done.contains(&i.id)
+                && matches!(i.action, PlanAction::CopyNew | PlanAction::CopyBack)
+                && i.size < transfer_service::DIRECT_MIN_BYTES
+        }) {
+            let (from, to) = match item.action {
+                PlanAction::CopyBack => (&item.dest_path, &item.source_path),
+                _ => (&item.source_path, &item.dest_path),
+            };
+            if std::path::Path::new(from).is_file() {
+                let _ = std::fs::remove_file(to);
+            }
+        }
     }
     transfer_journal::discard(&dir, &job_id);
     Ok(())

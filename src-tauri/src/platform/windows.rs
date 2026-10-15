@@ -13,6 +13,7 @@
 //! a mutation. Kept isolated in this module (per the Phase 2 brief) so
 //! the rest of the crate never touches `windows::Win32` directly.
 
+pub mod directio;
 mod fileops;
 mod mft;
 pub mod network;
