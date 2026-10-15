@@ -7,7 +7,7 @@ interface PathBreadcrumbProps {
   className?: string;
 }
 
-/** Splits a real Windows or UNC path into clickable segments, e.g.
+/** Splits a Windows or UNC path into clickable segments, e.g.
  * `D:\Data\Projects\Clients\AMGroup` -> `D: > Data > Projects > Clients
  * > AMGroup`, or `\\NAS\CompanyData\Projects` -> `NAS > CompanyData >
  * Projects`. Clicking a segment navigates to that ancestor directory. */

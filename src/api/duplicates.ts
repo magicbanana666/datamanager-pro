@@ -1,8 +1,6 @@
 /**
- * Typed wrappers around the Phase 5 duplicate-finder commands - same
- * shape as `api/scan.ts`, including generating the run id here so the
- * caller can subscribe (`subscribeJobEvents("duplicate", ...)`) before
- * the run can emit anything.
+ * Duplicate finder commands. The job id is generated here so the caller
+ * can subscribe (`subscribeJobEvents("duplicate", ...)`) before starting.
  */
 import { invoke } from "@tauri-apps/api/core";
 import type { DuplicateOptions } from "@/models/duplicates";

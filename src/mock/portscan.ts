@@ -1,7 +1,6 @@
 import type { HostScanResult } from "@/models/portscan";
 
-/** The full simulated LAN used by the IP / Port Scanner demo. Hosts are
- * revealed progressively by useSimulatedProgress as the "scan" runs. */
+/** Sample hosts for the IP / Port Scanner demo. */
 export const mockHosts: HostScanResult[] = [
   {
     id: "h1",

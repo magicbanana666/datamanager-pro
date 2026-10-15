@@ -1,15 +1,8 @@
-//! DataManager Pro - Tauri backend entry point.
+//! DataManager Pro backend.
 //!
-//! Read-only engines: volumes, folder browsing and metadata
-//! (`commands::filesystem`, `commands::storage`), the recursive scanner
-//! (`commands::scan`), and search, comparison and duplicate detection
-//! (`commands::search`, `commands::comparison`, `commands::duplicates`).
-//!
-//! Since Phase 6 the app also **writes**, but only through explicit user
-//! actions: the transfer engine (`commands::transfer` - copy, move and
-//! sync, journaled and resumable) and one-shot file operations
-//! (`commands::fileops` - delete selected files, save exports). See
-//! ROADMAP.md and the PHASE*.md files.
+//! Analysis (scan, search, comparison, duplicates, network) is read-only.
+//! Files are only modified by explicit user actions: the transfer engine
+//! (`commands::transfer`) and one-shot file operations (`commands::fileops`).
 
 mod app_paths;
 mod commands;
@@ -51,10 +44,8 @@ use commands::scheduler::{
 use commands::JobRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
-/// Stack for every worker thread. The scan builds and walks folder trees
-/// recursively; on deep trees (the whole C: drive) the default 2 MB overflowed
-/// once the compiler inlined less (exception 0xc00000fd). Reserved, not
-/// committed: only pages actually used cost memory.
+/// Worker thread stack size. Scanning a whole drive recurses deep enough
+/// to overflow the default 2 MB. Only touched pages are committed.
 const WORKER_STACK: usize = 64 * 1024 * 1024;
 
 pub fn run() {

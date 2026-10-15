@@ -1,4 +1,4 @@
-/** Mirrors `src-tauri/src/models/scheduler.rs` (Phase 9). */
+/** Mirrors `src-tauri/src/models/scheduler.rs`. */
 export type ScheduledTaskType = "Sync" | "Copy" | "Move" | "Mirror" | "Analyze";
 
 export type ScheduleFrequency = "Daily" | "Weekly" | "Monthly" | "Once";

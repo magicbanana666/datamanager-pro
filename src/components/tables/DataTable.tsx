@@ -99,12 +99,8 @@ export function DataTable<T>({
 
   const totalWidth = columns.reduce((s, c) => s + (colWidths[c.key] ?? DEFAULT_WIDTH), 0);
 
-  // Only the rows actually in view (plus `OVERSCAN` either side) are
-  // rendered, with spacer divs standing in for the rest - a real scan
-  // folder can have hundreds of children, and expanding a few of them
-  // in the Files & Folders tree otherwise mounts thousands of row
-  // elements at once. Every row is exactly `--row-h` tall, so the
-  // window is plain arithmetic, no per-row measuring.
+  // Virtualized: only visible rows (plus `OVERSCAN`) are rendered, with
+  // spacers for the rest. Rows have a fixed height (`--row-h`).
   const { ref: scrollRef, size } = useElementSize<HTMLDivElement>();
   const [scrollTop, setScrollTop] = useState(0);
   const [rowHeight, setRowHeight] = useState(FALLBACK_ROW_HEIGHT);

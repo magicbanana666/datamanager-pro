@@ -1,8 +1,6 @@
-//! Phase 8 network-share queries behind Network Analysis: connection
-//! details for a UNC path, a server's shares, a path's access rights,
-//! a server's sessions, and a real read-speed measurement. Read-only.
-//! (Scanning a share's contents is the regular scan engine - UNC paths
-//! always use the walk engine.)
+//! Network Analysis queries: connection details, shares, sessions,
+//! access rights and read speed. Share contents are scanned by the
+//! regular scanner (always the walk engine for UNC paths).
 
 use crate::models::errors::{AppError, AppErrorCode};
 use crate::models::network::{

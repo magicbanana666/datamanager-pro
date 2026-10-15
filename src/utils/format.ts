@@ -1,8 +1,4 @@
-/**
- * Formatting helpers shared across the whole app. Kept dependency-free so
- * they can be unit tested easily and reused by both UI components and mock
- * data generators.
- */
+/** Formatting helpers. */
 
 const BYTE_UNITS = ["B", "KB", "MB", "GB", "TB", "PB"] as const;
 
@@ -57,21 +53,4 @@ export function formatSpeed(bytesPerSecond: number): string {
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
-}
-
-/** Deterministic pseudo-random generator (mulberry32) so mock data & fake
- * scan simulations are stable across renders instead of reshuffling. */
-export function createRng(seed: number) {
-  let a = seed >>> 0;
-  return function rng() {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function pick<T>(rng: () => number, arr: readonly T[]): T {
-  return arr[Math.floor(rng() * arr.length) % arr.length];
 }

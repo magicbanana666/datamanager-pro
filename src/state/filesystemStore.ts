@@ -1,17 +1,8 @@
 /**
- * Real, backend-backed filesystem browsing state.
- *
- * This holds the *single* active browse session (one current path, its
- * listing, its shallow summary) plus the shared, app-wide volume list.
- * Disk Analysis and Folder Analysis - the two "browse one location at a
- * time" pages - use this store directly.
- *
- * Pages that need *two independent* locations at once (Comparison's A/B,
- * Data Transfer's source/destination, Sync's source/destination) do NOT
- * share this single session - they call `api/backend.ts` directly with
- * their own local path state instead, since a single global
- * `currentPath` can't represent two locations simultaneously. This store
- * is deliberately not a generic multi-instance cache for that reason.
+ * Browsing state: the current path, its listing and summary, and the
+ * volume list. Used by the analysis pages. Pages with two locations
+ * (Compare, Data Transfer, Sync) keep their own state and call
+ * `api/backend.ts` directly.
  */
 import { create } from "zustand";
 import { toAppError } from "@/api/backend";

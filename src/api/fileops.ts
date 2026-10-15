@@ -1,7 +1,6 @@
 /**
- * One-shot file operations (Phase 6): deleting selected files and
- * saving exports. Copy/move of selected files runs through the transfer
- * engine (`useFileActionStore`).
+ * One-off file operations (delete, save exports, reveal). Copy/move of
+ * selected files goes through the transfer engine (`useFileActionStore`).
  */
 import { invoke } from "@tauri-apps/api/core";
 

@@ -1,8 +1,7 @@
 /**
- * Event subscription shared by the Phase 5 jobs (duplicate finder,
- * folder comparison, file search): each emits `<prefix>-progress`, `-complete`,
- * `-cancelled` and `-error`, filtered here to one job id. Await it
- * before starting the job with that id, so no event can be missed.
+ * Subscribes to one job's `<prefix>-progress`, `-complete`, `-cancelled`
+ * and `-error` events (duplicates, comparison, search). Await it before
+ * starting the job so no event is missed.
  */
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type { AppError } from "@/models/backend";

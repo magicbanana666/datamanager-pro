@@ -1,14 +1,6 @@
 /**
- * TypeScript mirrors of the Rust models in `src-tauri/src/models/`.
- * Centralized here per the Phase 2 brief rather than specta/generated
- * bindings - Phase 2's surface is small and stable enough that hand-kept
- * types are simpler than adding a codegen pipeline. If the backend
- * surface grows significantly in a later phase, revisit that decision.
- *
- * Field names are camelCase on both sides (the Rust structs are
- * annotated `#[serde(rename_all = "camelCase")]`) so no mapping layer is
- * needed between what `invoke()` resolves and what these interfaces
- * describe.
+ * Hand-written mirrors of the Rust types in `src-tauri/src/models/`.
+ * Fields are camelCase on both sides (`#[serde(rename_all = "camelCase")]`).
  */
 
 import type { FsNode } from "@/models/common";
@@ -181,7 +173,7 @@ export interface PathValidation {
 }
 
 // ---------------------------------------------------------------------------
-// Recursive scanner (models::scan) - Phase 3
+// Scanner (models::scan)
 // ---------------------------------------------------------------------------
 
 export interface ScanOptions {
@@ -191,12 +183,8 @@ export interface ScanOptions {
   threads?: number | null;
 }
 
-/** Which engine actually produced a scan. Only ever known once a scan
- * finishes - the MFT-vs-walk decision happens inside the scan itself,
- * so it's never present on a `ScanProgress` tick, only `ScanResult`.
- * `mft` needs admin/backup privilege to open a raw volume handle;
- * without it, every scan silently and automatically falls back to
- * `walk` - see PHASE3.md. */
+/** The engine that produced a scan, known only at the end. `mft` needs
+ * admin rights; otherwise scans use `walk`. */
 export type ScanEngine = "mft" | "walk";
 
 export interface ScanProgress {
@@ -217,12 +205,8 @@ export interface ScanSkip {
 
 export interface ScanResult {
   scanId: string;
-  /** The real, recursively-aggregated tree - the exact `FsNode` shape
-   * `src/models/common.ts` already defines and the Phase 1 mock trees
-   * already use, so it can be dropped in wherever those are without an
-   * adaptation layer. `category` always comes back `null` for now -
-   * categorizing by extension stays a frontend concern, wired up when
-   * Phase 4 connects the Treemap to real data. */
+  /** Trimmed tree (see `TRANSPORT_DEPTH`). `category` is never set by
+   * the backend. */
   root: FsNode;
   engine: ScanEngine;
   elapsedMs: number;

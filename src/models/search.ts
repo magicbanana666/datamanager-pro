@@ -9,7 +9,7 @@ export interface SearchResultRow {
   modified: string;
   matchedTerm?: string;
   occurrences?: number;
-  /** Set for real results - the backend hit this row came from. */
+  /** The backend hit this row came from. */
   hit?: SearchHit;
 }
 

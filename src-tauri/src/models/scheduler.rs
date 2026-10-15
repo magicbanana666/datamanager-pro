@@ -1,6 +1,5 @@
-//! Data model for the Phase 9 scheduler, mirroring
-//! `src/models/scheduler.ts`. Tasks, settings and run history are
-//! persisted as JSON in the app's data directory (`scheduler\`).
+//! Scheduler types. Mirrors `src/models/scheduler.ts`. Stored as JSON
+//! under `scheduler\` in the data folder.
 
 use serde::{Deserialize, Serialize};
 

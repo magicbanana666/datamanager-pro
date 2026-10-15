@@ -1,5 +1,4 @@
-/** Phase 10 diagnostics: crash reports, the log folder, and recording
- * frontend errors in the backend's log file. */
+/** Crash reports, the log folder, and logging frontend errors. */
 import { invoke } from "@tauri-apps/api/core";
 
 export interface CrashReport {

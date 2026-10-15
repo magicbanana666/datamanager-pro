@@ -1,7 +1,4 @@
-//! Data shapes for the Phase 5 folder comparison - see
-//! `services::comparison_service` for the engine and
-//! `commands::comparison` for how a run is started/streamed. Mirrors
-//! `src/models/comparison.ts`.
+//! Folder comparison types. Mirrors `src/models/comparison.ts`.
 
 use crate::models::scan::ScanSkip;
 use crate::services::scan_analysis_service::ExtensionTotal;
@@ -36,8 +33,7 @@ fn default_true() -> bool {
     true
 }
 
-/// "Small" for `ignore_small_files`: anything that fits in a single
-/// typical NTFS cluster.
+/// Threshold for `ignore_small_files` (one NTFS cluster).
 pub const SMALL_FILE_BYTES: u64 = 4 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
@@ -105,7 +101,5 @@ pub struct ComparisonResult {
     pub skipped: Vec<ScanSkip>,
 }
 
-/// Caps the rows per status sent in one event - comparing two copies of
-/// a large tree yields hundreds of thousands of "identical" rows nobody
-/// scrolls through, and a payload that size would freeze the webview.
+/// Row cap per status in one event; larger payloads stall the webview.
 pub const MAX_ROWS_PER_STATUS: usize = 5_000;

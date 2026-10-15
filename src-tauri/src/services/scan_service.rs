@@ -1,19 +1,9 @@
-//! The multithreaded, cancellable directory-walk scanner - Phase 3's
-//! primary, fully-verified scan engine. Works identically against
-//! local drives and UNC paths, unlike the MFT fast path (which only
-//! ever applies to local NTFS drives) - see
-//! `platform::current::try_mft_scan` and `run_scan` below for how the
-//! two are combined.
+//! Parallel directory walk scanner. Works on local drives and UNC paths;
+//! `run_scan` tries the MFT reader first where possible.
 //!
-//! Parallelism comes from rayon: each directory's subdirectories are
-//! scanned via a parallel iterator, so wide trees fan out across CPU
-//! cores while `fs::read_dir` I/O for sibling directories overlaps.
-//! Everything per entry comes from the directory listing itself
-//! (`FindNextFileW` already returns size, attributes and timestamps);
-//! the only extra per-file syscall is `GetCompressedFileSizeW`, and only
-//! for files whose attributes say it can matter - see
-//! `platform::current::allocated_size_for_scan`. Directory enumeration
-//! itself is still the cost the MFT engine exists to avoid.
+//! Subdirectories are walked with rayon. Size, attributes and times come
+//! from the directory listing; `GetCompressedFileSizeW` is only called
+//! when needed (see `platform::current::allocated_size_for_scan`).
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::FileAttribute;
@@ -79,11 +69,8 @@ fn empty_folder_node(path: String, name: String) -> FsNode {
     }
 }
 
-/// A symlink/junction is intentionally not traversed - it's reported
-/// as a zero-size, non-recursed file leaf, avoiding both symlink
-/// cycles and double-counting a target that's also reachable directly.
-/// Its own (misleading) link-text length is deliberately not reported
-/// as `size` - see PHASE3.md's Known Limitations.
+/// Symlinks and junctions are not followed (cycles, double counting);
+/// they become zero-size leaves.
 fn leaf_node(
     path: &Path,
     metadata: &fs::Metadata,
@@ -119,17 +106,11 @@ fn leaf_node(
     }
 }
 
-/// Recursively scans `path`, returning the real `FsNode` tree rooted
-/// there - `size`/`allocated`/`fileCount`/`folderCount` are true
-/// recursive aggregates, not the shallow direct-children-only counts
-/// Phase 2's `get_directory_summary` reports.
+/// Scans `path` recursively. Sizes and counts are recursive totals.
 ///
-/// Never panics on an unreadable file or subdirectory - it's recorded
-/// via `state.record_skip` and the walk continues past it. Once
-/// `state.is_cancelled()` becomes true, every not-yet-visited branch
-/// short-circuits to an empty stub instead of doing any more I/O; the
-/// caller (`commands::scan`) is responsible for treating a cancelled
-/// scan's result as discarded rather than complete.
+/// Unreadable entries are recorded with `state.record_skip`. After a
+/// cancel, unvisited branches return empty stubs; the caller discards
+/// the result.
 pub fn scan_dir(path: &Path, options: ScanOptions, state: &ScanProgressState) -> FsNode {
     // Both looked up once per scan, not per entry: the cluster size is
     // the same for every file on the volume, and every other folder's
@@ -272,8 +253,7 @@ fn scan_dir_inner(
         allocated: total_allocated,
         file_count,
         folder_count,
-        // Overwritten by this node's own parent, once known; stays 100
-        // for the true scan root, matching the mock data's convention.
+        // Set by the parent; stays 100 for the scan root.
         percent_of_parent: 100.0,
         last_modified,
         category: None,
@@ -301,7 +281,7 @@ mod tests {
         let st = state();
         let root = scan_dir(dir.path(), ScanOptions::default(), &st);
 
-        // Unlike Phase 2's shallow summary, these are recursive totals.
+        // Recursive totals.
         assert_eq!(root.size, 18);
         assert_eq!(root.file_count, 3);
         assert_eq!(root.folder_count, 2);
@@ -344,7 +324,7 @@ mod tests {
         assert_eq!(stub.children, None);
         assert_eq!(st.take_skipped().len(), 1);
 
-        // A real scan of the real tree is unaffected by the above.
+        // A scan of the target itself is unaffected.
         let root = scan_dir(dir.path(), ScanOptions::default(), &state());
         assert_eq!(root.size, 10);
         assert_eq!(root.file_count, 2);
@@ -397,12 +377,12 @@ mod tests {
         assert_eq!(link.size, 0);
         assert_eq!(link.children, None);
 
-        // The real subfolder is still walked normally.
+        // The normal subfolder is still walked.
         let real = children.iter().find(|c| c.name == "real").unwrap();
         assert_eq!(real.size, 5);
     }
 
-    /// Live timing for the walk engine against a real folder
+    /// Timing for the walk engine against a folder
     /// (`WALK_BENCH_PATH`, default `C:\Windows`), plus a spot check that
     /// the fast per-scan allocated-size path agrees with the full
     /// per-file `allocated_size_bytes` lookup on the first 5,000 files.

@@ -1,12 +1,6 @@
-//! Byte-size formatting and usage-percentage math shared by every
-//! command that reports a size.
+//! Byte size formatting and usage percentages.
 //!
-//! **Chosen convention**: sizes are computed using binary (1024-based)
-//! arithmetic, but labeled with the common decimal-looking unit names
-//! (KB/MB/GB/TB/PB) rather than the pedantic KiB/MiB/etc, matching how
-//! Windows Explorer and the Phase 1 frontend already present sizes (e.g.
-//! "1.24 TB"). This is documented here once rather than re-decided at
-//! every call site.
+//! Sizes use 1024-based units labeled KB/MB/GB/TB, like Explorer.
 
 const UNITS: [&str; 6] = ["B", "KB", "MB", "GB", "TB", "PB"];
 
@@ -62,7 +56,7 @@ mod tests {
 
     #[test]
     fn terabytes_match_frontend_style() {
-        // ~1.24 TiB, matching the "1.24 TB" example from the brief.
+        // ~1.24 TiB.
         let bytes = (1.24_f64 * 1024_f64.powi(4)) as u64;
         assert_eq!(format_bytes(bytes), "1.24 TB");
     }

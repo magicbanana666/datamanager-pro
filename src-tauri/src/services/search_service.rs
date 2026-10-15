@@ -1,8 +1,7 @@
-//! The Phase 5 file-search engine.
+//! File search.
 //!
-//! Lists the location with the regular scan engines (so a name search
-//! over a whole drive is as fast as a scan), applies the type/size/date
-//! filters, then matches each remaining file in parallel:
+//! Lists the location with the scan engines, applies the type, size and
+//! date filters, then matches the remaining files in parallel:
 //!
 //! - **name**: plain text, a wildcard pattern (`*.pdf`), or a regex;
 //! - **archive**: the names of entries inside `.zip` files - read from
@@ -11,8 +10,6 @@
 //!   matches (source, logs, CSV, HTML, ...). Formats that store text
 //!   compressed or as UTF-16 (`.docx`, `.pdf`, many `.txt` files saved
 //!   by Notepad as "Unicode") are not decoded and won't match by content.
-//!
-//! Read-only throughout.
 
 use crate::models::hash_job::{HashJobPhase, HashJobState};
 use crate::models::scan::{FsNode, NodeKind, ScanOptions};

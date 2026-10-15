@@ -1,14 +1,13 @@
-//! The Phase 6/7 transfer engine: copy, move and the four sync modes.
+//! Transfer engine: copy, move and the four sync modes.
 //!
 //! [`analyze`] lists both sides and decides, per file, what happens to
 //! it ([`PlanAction`]); [`execute`] carries the plan out:
 //!
 //! 1. missing (empty) folders are created;
-//! 2. files are copied on a small thread pool, each one to
-//!    `<name>.dmp-part` first and renamed into place only once complete
-//!    (and verified, if asked) - a destination file is never left half
-//!    written, and an interrupted large copy resumes from its last
-//!    checkpoint (see `transfer_journal`);
+//! 2. files are copied in parallel. Large files and replacements go to
+//!    `<name>.dmp-part` and are renamed when complete (and verified);
+//!    an interrupted large copy resumes from its last checkpoint (see
+//!    `transfer_journal`);
 //! 3. deletions run last (Recycle Bin by default), so a failed copy
 //!    never costs the only other copy of a file;
 //! 4. a move removes the source folders it emptied.

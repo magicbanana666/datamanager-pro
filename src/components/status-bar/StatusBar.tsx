@@ -5,7 +5,7 @@ import { useUiStore } from "@/state/uiStore";
 export function StatusBar() {
   const { statusText, memoryMb, setMemoryMb, appVersion } = useUiStore();
 
-  // The backend process's real memory use (working set), every 3 s.
+  // Process memory (working set), every 3 s.
   useEffect(() => {
     const read = () =>
       invoke<number>("get_process_memory")

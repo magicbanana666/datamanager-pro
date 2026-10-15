@@ -1,9 +1,5 @@
-//! Non-Windows fallback implementation of the `platform::current` API.
-//!
-//! DataManager Pro targets Windows 10/11 (see the Phase 2 brief); this
-//! module exists purely so the crate stays buildable on other platforms
-//! for development/CI convenience. It never invents values - unsupported
-//! operations return `Unsupported`/`None` rather than fake data.
+//! Non-Windows stubs for `platform::current`, so the crate builds
+//! elsewhere. Everything returns `Unsupported` or `None`.
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::FileAttribute;
@@ -13,7 +9,7 @@ use std::path::Path;
 
 pub fn list_volumes() -> Result<Vec<StorageVolume>, AppError> {
     Err(AppError::unsupported(
-        "Storage volume enumeration is only implemented for Windows in Phase 2.",
+        "Storage volume enumeration is only implemented for Windows.",
     ))
 }
 

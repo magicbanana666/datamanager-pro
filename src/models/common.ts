@@ -1,7 +1,4 @@
-/** Shared domain types used across multiple pages (disk/folder/network
- * analysis, comparison, reports...). Phase 1 uses these purely for typed
- * mock data - the shapes are designed to map cleanly onto a future real
- * filesystem-scanning backend. */
+/** Domain types shared by several pages. */
 
 export type FileTypeCategoryId =
   | "virtual-disk"
@@ -23,14 +20,9 @@ export interface FileTypeCategory {
 }
 
 /**
- * Phase 1's original lists only had a handful of illustrative
- * extensions each - fine for hand-authored mock data, but a real scan
- * (`utils/scanAnalysis.ts`'s `categorizeByExtension`, and the Treemap's
- * per-file tile color) sends most real files straight to "Other" that
- * way, since ordinary Windows installs are full of extensions no entry
- * here recognized (`.dll`/`.sys` alone dominate `Program Files`/
- * `Windows`). Expanded to cover what actually shows up on a real disk,
- * confirmed live against a real `C:\` scan.
+ * File type categories by extension, used by `categorizeByExtension`
+ * and the treemap colors. Covers the extensions common on a Windows
+ * system drive.
  */
 export const FILE_TYPE_CATEGORIES: FileTypeCategory[] = [
   {
@@ -81,10 +73,7 @@ export const FILE_TYPE_CATEGORIES: FileTypeCategory[] = [
   {
     id: "executable",
     label: "Executable (.exe, .dll)",
-    // .dll/.sys are what actually make Program Files/Windows huge -
-    // not directly runnable like a .exe, but the same kind of binary
-    // program file, and the category real disk-usage tools bucket
-    // them into too.
+    // .dll/.sys make up most of Program Files and Windows.
     extensions: [".exe", ".msi", ".msu", ".msp", ".bat", ".cmd", ".com", ".dll", ".sys", ".drv"],
     colorIndex: 7,
   },
@@ -143,8 +132,7 @@ export interface FsNode {
   folderCount: number;
   /** Percentage of the parent's size this node represents (0-100). */
   percentOfParent: number;
-  /** `null` for a real scan's skipped/inaccessible subtree stub (see
-   * PHASE3.md) - never null for mock data. */
+  /** `null` for a subtree the scan couldn't read. */
   lastModified: string | null;
   category?: FileTypeCategoryId;
   children?: FsNode[];

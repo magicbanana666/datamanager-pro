@@ -1,6 +1,6 @@
-//! Phase 9 scheduler logic that doesn't need the app: when a schedule
-//! next fires, persisting tasks/history, and turning a task into a
-//! transfer request. The runner itself lives in `commands::scheduler`.
+//! Scheduler logic that doesn't need the app handle: next run times,
+//! persistence, and turning a task into a transfer request. The runner
+//! is in `commands::scheduler`.
 
 use crate::models::scheduler::{
     Schedule, ScheduleFrequency, ScheduledTask, ScheduledTaskType, SchedulerData,

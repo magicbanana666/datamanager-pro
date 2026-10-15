@@ -11,9 +11,7 @@ pub struct AppVersionInfo {
     pub tauri_version: String,
 }
 
-/// Real system information gathered via `sysinfo` (Phase 2). Kept
-/// separate from the filesystem API per the Phase 2 brief - this has
-/// nothing to do with disks/volumes.
+/// OS, CPU and memory information from `sysinfo`.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SystemInfo {

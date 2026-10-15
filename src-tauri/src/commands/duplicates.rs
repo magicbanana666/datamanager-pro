@@ -1,15 +1,9 @@
-//! Tauri commands for the Phase 5 duplicate finder - same shape as
-//! `commands::scan`: `start_duplicate_scan` validates, registers and
-//! spawns a run, returning immediately; progress and the outcome are
-//! streamed back as events:
+//! Duplicate finder commands.
 //!
-//! - `duplicate-progress` - roughly every 150ms while running.
-//! - `duplicate-complete` - once, carrying the `DuplicateResult`.
-//! - `duplicate-cancelled` - once, instead, after `cancel_duplicate_scan`.
-//! - `duplicate-error` - only if the task itself panics.
-//!
-//! The caller generates the run id, for the same subscribe-before-start
-//! reason documented on `commands::scan::start_scan`.
+//! `start_duplicate_scan` returns once the job is running. Events:
+//! `duplicate-progress` (every 150 ms), then one of `duplicate-complete`,
+//! `duplicate-cancelled` or `duplicate-error`. The job id comes from the
+//! caller (see `commands::scan::start_scan`).
 
 use super::{run_hash_job, JobRegistry};
 use crate::models::duplicates::{DuplicateOptions, DuplicateResult};
@@ -34,8 +28,8 @@ pub(crate) struct ErrorPayload<'a> {
     pub error: AppError,
 }
 
-/// Validates every location up front (better to say so than to report
-/// "nothing found" for a typo'd path) and returns them normalized.
+/// Checks and normalizes the locations, so a typo is an error instead of
+/// an empty result.
 pub(crate) fn validate_folders(roots: Vec<String>) -> Result<Vec<String>, AppError> {
     let mut normalized = Vec::with_capacity(roots.len());
     for root in roots {

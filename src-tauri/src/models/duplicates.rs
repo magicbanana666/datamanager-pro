@@ -1,6 +1,4 @@
-//! Data shapes for the Phase 5 duplicate finder - see
-//! `services::duplicate_service` for the engine and
-//! `commands::duplicates` for how a run is started/streamed.
+//! Duplicate finder types. Mirrors `src/models/duplicates.ts`.
 
 use crate::models::scan::ScanSkip;
 use serde::{Deserialize, Serialize};
@@ -28,9 +26,7 @@ pub struct DuplicateOptions {
     pub ignore_hidden: bool,
     #[serde(default = "default_true")]
     pub ignore_system: bool,
-    /// Bytes. Zero-byte files are always skipped - every empty file is
-    /// trivially "identical" to every other, which is noise, not a
-    /// finding.
+    /// Bytes. Empty files are always skipped.
     #[serde(default)]
     pub min_size: u64,
     #[serde(default)]
@@ -65,9 +61,8 @@ pub struct DuplicateGroup {
 #[serde(rename_all = "camelCase")]
 pub struct DuplicateResult {
     pub scan_id: String,
-    /// The largest groups by `wasted_bytes`, at most
-    /// `MAX_GROUPS_IN_RESULT` - the totals below always cover *every*
-    /// group found, shown or not.
+    /// Largest groups by `wasted_bytes`, at most `MAX_GROUPS_IN_RESULT`.
+    /// The totals cover all groups.
     pub groups: Vec<DuplicateGroup>,
     pub total_groups: u64,
     pub total_duplicate_files: u64,
@@ -77,8 +72,6 @@ pub struct DuplicateResult {
     pub skipped: Vec<ScanSkip>,
 }
 
-/// Caps the groups sent to the frontend in one event - a same-name run
-/// over a whole drive finds tens of thousands (`desktop.ini`, ...),
-/// far more than anyone reviews, and the payload would freeze the
-/// webview the same way a whole-drive `scan-complete` once did.
+/// Group cap per result. A same-name run over a drive finds tens of
+/// thousands (`desktop.ini`, ...).
 pub const MAX_GROUPS_IN_RESULT: usize = 5_000;

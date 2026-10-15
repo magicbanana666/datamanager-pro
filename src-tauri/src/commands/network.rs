@@ -1,7 +1,5 @@
-//! Tauri commands for Phase 8's Network Analysis: connection details,
-//! a server's shares and sessions, access rights of a path, and a read
-//! speed measurement. All read-only. Scanning a share's contents uses
-//! the regular `start_scan`.
+//! Network Analysis commands: connection details, shares, sessions,
+//! permissions and read speed. Share contents are scanned with `start_scan`.
 
 use super::blocking;
 use crate::models::errors::{AppError, AppErrorCode};

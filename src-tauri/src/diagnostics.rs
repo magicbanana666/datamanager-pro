@@ -1,5 +1,4 @@
-//! Phase 10 diagnostics: a log file per run, crash reports, and
-//! frontend errors written to the same log.
+//! Logging, crash reports and frontend error reporting.
 //!
 //! - `logs\datamanager-<time>.log` - everything `tracing` logs (the 10
 //!   newest are kept). Set before the Tauri app exists, so the folder is

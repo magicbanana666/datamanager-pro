@@ -1,10 +1,6 @@
-//! Win32 calls the Phase 6/7 transfer engine needs beyond `std::fs`:
-//! copying a file's DACL (NTFS permissions) and attributes, deleting to
-//! the Recycle Bin, and free space for the pre-flight check.
-//!
-//! Unlike the rest of `platform::windows`, these *do* modify the
-//! filesystem - they're only ever called by `services::transfer_service`
-//! on paths the user explicitly chose as a transfer's source/destination.
+//! Win32 file operations for the transfer engine: copying DACLs and
+//! attributes, Recycle Bin deletes, file times and free space. These
+//! modify files and are only called on paths the user chose.
 
 use super::to_wide;
 use std::path::Path;

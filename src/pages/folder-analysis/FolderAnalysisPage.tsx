@@ -54,13 +54,8 @@ export function FolderAnalysisPage() {
   // doesn't reset this to the default while a different path is scanning.
   const [location, setLocation] = useState(() => useScanStore.getState().path ?? "");
   const [tab, setTab] = useState("treemap");
-  // A real scan's result is global (`useScanStore`) and can already
-  // exist when this page first mounts (e.g. navigating back after
-  // scanning) - the lazy initializer reads the store directly
-  // (`.getState()`, not the hook) so the very first render starts on
-  // the real root instead of briefly showing the empty pre-scan root.
-  // See the render-time sync below for the case where a scan completes
-  // *while* this page is already mounted.
+  // The scan result is global and may already exist on mount; start on
+  // its root right away.
   const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [
     useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT,
   ]);
@@ -85,12 +80,8 @@ export function FolderAnalysisPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A completed real scan replaces what the treemap/table are looking
-  // at - reset to its root rather than leaving the view on whatever
-  // mock/previous node was selected. Done inline during render (React's
-  // documented "adjusting state when a prop changes" pattern) rather
-  // than in a useEffect, so it takes effect in the same render instead
-  // of triggering an extra cascading one.
+  // A new scan result resets the view to its root. Done during render
+  // (React's "adjusting state when a prop changes") to avoid an extra pass.
   const [lastSeenResult, setLastSeenResult] = useState(realScan.result);
   if (realScan.result !== lastSeenResult) {
     setLastSeenResult(realScan.result);
@@ -102,17 +93,13 @@ export function FolderAnalysisPage() {
     }
   }
 
-  // True once a real scan has completed - the treemap/table already
-  // work off `currentNode` generically, so the only thing this gates
-  // is whether the analysis comes from the backend. Before any scan
-  // the page shows the empty root's empty states.
+  // Analysis comes from the backend once a scan has completed.
   const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
 
-  // The Duplicates tab runs the real duplicate finder on the folder in
-  // view (the global run, so the Duplicate Finder page shows the same
-  // result) and only shows it while that run covers exactly this folder.
+  // The Duplicates tab uses the global duplicate run (shared with the
+  // Duplicate Finder page) and only shows it if it covers this folder.
   const dupRun = useDuplicateStore();
   const dupForThisFolder =
     isReal &&
@@ -144,9 +131,7 @@ export function FolderAnalysisPage() {
   const timelineData = analysis.timeline;
   const sizeDistribution = topChildrenWithOthers(currentNode.children ?? [], 3);
 
-  // A real scan's tree arrives depth-truncated, so a folder may need
-  // its children fetched first (see `needsChildren`) - a no-op for
-  // the empty pre-scan root and already-loaded folders.
+  // Deeper folders are loaded on demand (see `needsChildren`).
   function drillInto(node: FsNode) {
     realScan
       .loadChildren(node)
@@ -239,13 +224,7 @@ export function FolderAnalysisPage() {
         <Card title="Select Folder" className="flex-1">
           <div className="flex flex-col gap-2.5">
             <LocationPicker value={location} onChange={setLocation} />
-            {/* Kept to exactly two rows (LocationPicker + this one, plus
-                the progress bar only while actively scanning) regardless
-                of scan state - folding the completed summary in here
-                rather than a separate paragraph avoids regrowing this
-                already-crowded card's height and squeezing the treemap
-                row below it (see PHASE2.md's identical layout-overflow
-                note about this exact card). */}
+            {/* The summary stays on this row so the card keeps its height. */}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="primary"

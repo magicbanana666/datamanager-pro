@@ -1,8 +1,5 @@
-//! Shared runtime state and progress payload for the Phase 5 jobs that
-//! list files and then hash some of them - the duplicate finder
-//! (`services::duplicate_service`) and the folder comparison
-//! (`services::comparison_service`). Both report the same phases and
-//! use the same cancel/registry plumbing (`commands::JobRegistry`).
+//! State and progress for jobs that list files and then hash some of
+//! them: the duplicate finder and the folder comparison.
 
 use crate::models::scan::ScanProgressState;
 use serde::Serialize;
@@ -32,9 +29,8 @@ pub struct HashJobProgress {
     pub elapsed_ms: u64,
 }
 
-/// Shared runtime state for one job. `scan` carries the
-/// collect phase's counters, the cancel flag and skips, so the regular
-/// scan engines can run against it unchanged.
+/// State of one job. `scan` holds the listing phase's counters, cancel
+/// flag and skips, so the scan engines can be reused as is.
 pub struct HashJobState {
     pub scan: ScanProgressState,
     phase: AtomicU8,
@@ -64,8 +60,7 @@ impl HashJobState {
         }
     }
 
-    /// Starts a hashing phase: resets the byte counters so each phase's
-    /// progress bar runs 0-100% on its own.
+    /// Starts a phase and resets the byte counters for its progress bar.
     pub fn begin_phase(&self, phase: HashJobPhase, bytes_to_hash: u64) {
         self.bytes_hashed.store(0, Ordering::Relaxed);
         self.bytes_to_hash.store(bytes_to_hash, Ordering::Relaxed);

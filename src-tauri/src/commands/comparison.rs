@@ -1,10 +1,7 @@
-//! Tauri commands for the Phase 5 folder comparison - same streaming
-//! shape as `commands::duplicates`:
+//! Folder comparison commands.
 //!
-//! - `comparison-progress` - roughly every 150ms while running.
-//! - `comparison-complete` - once, carrying the `ComparisonResult`.
-//! - `comparison-cancelled` - once, instead, after `cancel_comparison`.
-//! - `comparison-error` - only if the task itself panics.
+//! Events: `comparison-progress` (every 150 ms), then one of
+//! `comparison-complete`, `comparison-cancelled` or `comparison-error`.
 
 use super::duplicates::{validate_folders, CancelledPayload, ErrorPayload};
 use super::{run_hash_job, JobRegistry};

@@ -1,10 +1,4 @@
-//! Storage volume enumeration, with a very small cache in front of the
-//! (comparatively expensive, syscall-per-drive) platform query.
-//!
-//! Deliberately not a general-purpose cache layer: one static slot,
-//! read-through, and `force_refresh` bypasses it entirely. Phase 3 can
-//! replace this if volume info ever needs to be watched/invalidated
-//! automatically.
+//! Volume list with a single-slot cache; `force_refresh` bypasses it.
 
 use crate::models::errors::AppError;
 use crate::models::storage::StorageVolume;

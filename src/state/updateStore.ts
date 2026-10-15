@@ -1,5 +1,5 @@
 /**
- * Phase 10 auto-update via `tauri-plugin-updater`: checks the GitHub
+ * Auto-update via `tauri-plugin-updater`: checks the GitHub
  * Releases feed (`latest.json`, signed with the project's minisign key),
  * downloads and installs the update, then restarts the app.
  */

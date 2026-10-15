@@ -1,6 +1,4 @@
-//! Data shapes for the Phase 5 file search - see
-//! `services::search_service` for the engine and `commands::search` for
-//! how a run is started/streamed. Mirrors `src/models/search.ts`.
+//! File search types. Mirrors `src/models/search.ts`.
 
 use crate::models::scan::ScanSkip;
 use serde::{Deserialize, Serialize};
@@ -93,13 +91,12 @@ pub struct SearchResult {
     pub skipped: Vec<ScanSkip>,
 }
 
-/// Caps the hits sent in one event - a broad query over a whole drive
-/// can match hundreds of thousands of files.
+/// Hit cap per result; a broad query over a drive can match far more.
 pub const MAX_HITS: usize = 10_000;
 /// Content matches kept per file for the Occurrences panel.
 pub const MAX_SNIPPETS: usize = 20;
 /// Archive entries kept per archive hit.
 pub const MAX_ARCHIVE_ENTRIES: usize = 50;
-/// Files larger than this are not content-searched (they're read into
-/// memory whole) - they can still match by name.
+/// Larger files are only matched by name (content search reads the
+/// whole file into memory).
 pub const MAX_CONTENT_BYTES: u64 = 64 * 1024 * 1024;

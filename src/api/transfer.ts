@@ -1,8 +1,7 @@
 /**
- * Typed wrappers around the Phase 6/7 transfer commands, plus the
- * event subscription for one job (`transfer-progress`, `-planned`,
- * `-complete`, `-cancelled`, `-error`). Await the subscription before
- * starting the job, so no event can be missed.
+ * Transfer commands, and a subscription to one job's events
+ * (`transfer-progress`, `-planned`, `-complete`, `-cancelled`,
+ * `-error`). Subscribe before starting the job.
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";

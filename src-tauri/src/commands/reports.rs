@@ -1,6 +1,5 @@
-//! Tauri commands for Phase 9 reports. Reports are written to
-//! `Documents\DataManager Pro Reports`; an index in the app data folder
-//! (`reports\index.json`) backs the Recent Reports list.
+//! Report commands. Reports go to `Documents\DataManager Pro Reports`;
+//! `reports\index.json` in the data folder lists recent ones.
 
 use super::blocking;
 use crate::models::errors::{AppError, AppErrorCode};

@@ -1,4 +1,4 @@
-/** Typed wrappers around the Phase 9 report commands. */
+/** Report commands. */
 import { invoke } from "@tauri-apps/api/core";
 import type { ReportRecord, ReportRequest } from "@/models/reports";
 

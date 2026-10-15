@@ -1,4 +1,4 @@
-//! Where the app keeps its own files (Phase 10).
+//! Where the app keeps its own files.
 //!
 //! Installed: `%APPDATA%\xyz.vanhulle.datamanagerpro` for data (journals,
 //! sync state, scheduler, report index, logs, crash reports) and

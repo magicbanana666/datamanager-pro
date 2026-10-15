@@ -1,17 +1,10 @@
-//! Backend counterpart to `src/utils/scanAnalysis.ts`'s `analyzeTree`,
-//! run against the *full* cached tree (`commands::scan::ScanTreeCache`)
-//! rather than whatever the frontend has received. Since `scan-complete`
-//! and `get_subtree` only ever ship a depth-truncated copy (see
-//! `models::scan::TRANSPORT_DEPTH`), a frontend-side walk would silently
-//! miss every file deeper than that - Top Files on a `C:\` scan would
-//! only see files within two folders of the root.
+//! Analysis tab data computed from the full cached tree. The frontend
+//! only has a trimmed copy (see `models::scan::TRANSPORT_DEPTH`), so it
+//! can't do this itself.
 //!
-//! Returns *raw* aggregates (per-extension totals, timeline buckets,
-//! top files/folders) rather than finished chart data: mapping
-//! extensions to file-type categories stays a frontend concern, per
-//! Phase 2's "backend sends raw data" convention, and the frontend
-//! finishes both this and its own mock-data path through the same
-//! `finalizeAnalysis` step.
+//! Returns raw aggregates (per-extension totals, timeline buckets, top
+//! files and folders); the frontend maps extensions to categories in
+//! `finalizeAnalysis`.
 
 use crate::models::scan::{FsNode, NodeKind};
 use chrono::{DateTime, Utc};

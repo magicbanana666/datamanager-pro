@@ -1,4 +1,4 @@
-/** App settings, persisted in the webview's local storage (Phase 10).
+/** App settings, persisted in the webview's local storage.
  * Stored sections are merged over the defaults, so a setting added in a
  * later version starts at its default instead of undefined. */
 import { create } from "zustand";

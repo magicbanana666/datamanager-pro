@@ -57,12 +57,8 @@ export function DiskAnalysisPage() {
   const [location, setLocation] = useState(() => useScanStore.getState().path ?? "");
   const [tab, setTab] = useState("treemap");
   const [quickFilter, setQuickFilter] = useState<QuickFilterId>("all");
-  // A real scan's result is global (`useScanStore`) and can already
-  // exist when this page first mounts (e.g. navigating back after
-  // scanning) - the lazy initializer reads the store directly
-  // (`.getState()`, not the hook) so the very first render starts on
-  // the real root instead of briefly showing the empty pre-scan root. See the render-time sync below for the case where
-  // a scan completes *while* this page is already mounted.
+  // The scan result is global and may already exist on mount; start on
+  // its root right away.
   const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT]);
   const [selectedNode, setSelectedNode] = useState<FsNode | null>(() => {
     const root = useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT;
@@ -84,12 +80,8 @@ export function DiskAnalysisPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // A completed real scan replaces what the treemap/table are looking
-  // at - reset to its root rather than leaving the view on whatever
-  // mock/previous node was selected. Done inline during render (React's
-  // documented "adjusting state when a prop changes" pattern) rather
-  // than in a useEffect, so it takes effect in the same render instead
-  // of triggering an extra cascading one.
+  // A new scan result resets the view to its root. Done during render
+  // (React's "adjusting state when a prop changes") to avoid an extra pass.
   const [lastSeenResult, setLastSeenResult] = useState(realScan.result);
   if (realScan.result !== lastSeenResult) {
     setLastSeenResult(realScan.result);
@@ -101,10 +93,7 @@ export function DiskAnalysisPage() {
     }
   }
 
-  // Derived rather than effect-driven: once volumes load, fall back to
-  // the first fixed volume for display without needing a setState pass.
-  // Explicitly picking a volume (below) still updates real state, since
-  // that's a genuine user action tied to the location field.
+  // Until a volume is picked, show the first fixed one.
   const displayVolume = selectedVolume ?? volumes.find((v) => v.volumeType === "fixed") ?? volumes[0] ?? null;
 
   function selectVolume(volume: StorageVolume) {
@@ -112,10 +101,7 @@ export function DiskAnalysisPage() {
     setLocation(volume.mountPoint);
   }
 
-  // True once a real scan has completed - the treemap/table already
-  // work off `currentNode` generically, so the only thing this gates
-  // is whether the analysis comes from the backend. Before any scan
-  // the page shows the empty root's empty states.
+  // Analysis comes from the backend once a scan has completed.
   const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
@@ -129,10 +115,7 @@ export function DiskAnalysisPage() {
   // per row made rendering a wide expanded folder quadratic.
   const depthById = useMemo(() => new Map(visibleRows.map((r) => [r.node.id, r.depth])), [visibleRows]);
 
-  // Scoped to the current breadcrumb position, not always the whole
-  // scan root - drilling into a subfolder re-scopes File Types/Top
-  // Files/Top Folders/Timeline/Extensions to it, same as a real
-  // WizTree/TreeSize-style tool. Only recomputed on navigation.
+  // Scoped to the folder in view.
   const analysis = useScanAnalysis(currentNode, isReal ? realScan.scanId : null);
   const categoryStats = analysis.categoryStats;
   const topFilesData = analysis.topFiles;
@@ -140,9 +123,7 @@ export function DiskAnalysisPage() {
   const extensionData = analysis.extensionStats;
   const timelineData = analysis.timeline;
 
-  // A real scan's tree arrives depth-truncated, so a folder may need
-  // its children fetched first (see `needsChildren`) - a no-op for
-  // the empty pre-scan root and already-loaded folders.
+  // Deeper folders are loaded on demand (see `needsChildren`).
   function drillInto(node: FsNode) {
     realScan
       .loadChildren(node)
@@ -249,12 +230,7 @@ export function DiskAnalysisPage() {
         <Card title="Select Location" className="flex-1">
           <div className="flex flex-col gap-2.5">
             <LocationPicker value={location} onChange={setLocation} />
-            {/* Kept to exactly two rows (LocationPicker + this one, plus
-                the progress bar only while actively scanning) regardless
-                of scan state - folding the completed summary in here
-                rather than a separate paragraph avoids regrowing this
-                card's height and squeezing the treemap row below it
-                (see PHASE2.md's identical layout-overflow note). */}
+            {/* The summary stays on this row so the card keeps its height. */}
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="primary"
@@ -313,20 +289,11 @@ export function DiskAnalysisPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
-        {/* "Users" has no real backend (no owner lookup - see PHASE2.md) so it stays badged regardless. */}
       </div>
 
-      {/* auto-rows-fr: keeps this grid's one implicit row stretched to the
-          available height (rather than shrink-to-content) - belt-and-
-          suspenders alongside the real fix below (Files & Folders'
-          `flex-none`), which is what actually mattered: without it, a
-          sibling `Card` with a fixed `bodyClassName="h-[…px]"` loses that
-          height to `Card`'s own default `flex-1` (flex-basis:0% beats an
-          explicit `height` in flexbox), so the table grows to fit every
-          real row instead of scrolling within its box - starving this
-          flex-1 grid (and the Treemap's ResizeObserver-measured height)
-          down to 0 once real data had enough rows for it to show. See
-          PHASE4.md. */}
+      {/* auto-rows-fr stretches the row to the available height. A fixed-height
+          Card body also needs `flex-none`, otherwise Card's `flex-1` overrides
+          the height and the treemap ends up 0 px tall. */}
       {/* min-h: in a small window the page scrolls rather than the
           treemap/results collapsing to nothing. */}
       <div className="grid min-h-[300px] flex-1 auto-rows-fr grid-cols-[1fr_280px] gap-3 2xl:grid-cols-[1fr_300px]">

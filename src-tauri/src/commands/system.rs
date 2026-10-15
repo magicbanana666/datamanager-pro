@@ -1,6 +1,4 @@
-//! Diagnostic and system-info commands. `get_system_info` is real as of
-//! Phase 2 (via `sysinfo`); it deliberately knows nothing about disks or
-//! volumes - see `commands::storage` for that.
+//! System info and diagnostics commands. Volumes are in `commands::storage`.
 
 use super::blocking;
 use crate::models::errors::AppError;
@@ -15,8 +13,7 @@ pub fn get_app_version() -> AppVersionInfo {
     }
 }
 
-/// Real OS/CPU/RAM information gathered via `sysinfo`. Kept separate
-/// from the filesystem/storage API on purpose.
+/// OS, CPU and memory information.
 #[tauri::command]
 pub async fn get_system_info() -> Result<SystemInfo, AppError> {
     tracing::info!("get_system_info");
@@ -40,8 +37,7 @@ pub async fn get_system_info() -> Result<SystemInfo, AppError> {
     .await
 }
 
-/// Simple liveness check the frontend can call to confirm the Rust side
-/// is responding.
+/// Liveness check.
 #[tauri::command]
 pub fn ping_backend() -> String {
     "pong".to_string()

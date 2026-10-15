@@ -1,6 +1,6 @@
 /**
- * Builds a Phase 9 `ReportDocument` from the real results the app
- * holds right now: the last scan (Disk/Folder or Network Analysis), the
+ * Builds a `ReportDocument` from the results the app holds: the last
+ * scan (Disk/Folder or Network Analysis), the
  * duplicate finder, the comparison, the file search, the last transfer
  * and sync, and the scheduler. Each throws a readable message when its
  * data source has nothing yet.

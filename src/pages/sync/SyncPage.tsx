@@ -294,8 +294,7 @@ export function SyncPage() {
             )}
           </Card>
         ) : tab === "filters" || tab === "options" ? null : (
-          // flex-none on the body: see the identical fix/comment in
-          // DiskAnalysisPage.tsx (PHASE4.md).
+          // flex-none keeps the fixed height inside the flex column.
           <Card padded={false} bodyClassName="h-[280px] flex-none" className="flex-1">
             <DataTable
               columns={tab === "conflicts" ? conflictColumns : columns}

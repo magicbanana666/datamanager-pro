@@ -1,17 +1,13 @@
-//! Path normalization and validation - the one place that decides
-//! whether a frontend-supplied path string is safe to hand to
-//! `std::fs`. Nothing here ever panics: malformed, missing or
-//! inaccessible paths are reported as data, not errors that unwind.
+//! Validation of paths coming from the frontend. Problems are returned
+//! as data, never as errors.
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::PathValidation;
 use crate::utils::path::{is_absolute, is_unc, normalize_path};
 use std::path::Path;
 
-/// Validates `input` without touching anything but read-only metadata
-/// calls. Always returns a `PathValidation` - never an `Err` - so the
-/// frontend can render "path not found" / "access denied" etc. as a
-/// normal UI state rather than a thrown error.
+/// Validates `input` using metadata calls only. "Not found", "access
+/// denied" etc. are part of the returned `PathValidation`.
 pub fn validate(input: &str) -> PathValidation {
     let normalized = normalize_path(input);
     if normalized.is_empty() {
@@ -36,9 +32,7 @@ pub fn validate(input: &str) -> PathValidation {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) => {
             let is_symlink = metadata.file_type().is_symlink();
-            // For a symlink, classify file-vs-directory by its *target*
-            // where possible - that's what a user browsing folders cares
-            // about, not the link object itself.
+            // Classify a symlink by its target where possible.
             let (is_file, is_directory) = if is_symlink {
                 std::fs::metadata(path)
                     .map(|m| (m.is_file(), m.is_dir()))

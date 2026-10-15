@@ -1,12 +1,8 @@
-//! The Phase 5 folder-comparison engine.
+//! Folder comparison.
 //!
-//! Lists both locations with the regular scan engines, pairs files by
-//! their path relative to each location (case-insensitively, as Windows
-//! itself does), then classifies every pair. Only `ContentHash` reads
-//! file contents, and only for pairs whose sizes already match - a size
-//! difference settles "different" without opening either file.
-//!
-//! Read-only throughout: nothing here modifies, moves or deletes a file.
+//! Lists both locations with the scan engines, pairs files by relative
+//! path (case-insensitive) and classifies each pair. Only `ContentHash`
+//! reads file contents, and only when the sizes are equal.
 
 use crate::models::comparison::{
     ComparisonMode, ComparisonOptions, ComparisonRow, ComparisonSide, ComparisonStatus,
@@ -406,7 +402,7 @@ mod tests {
         assert!(!same_time(Some("2026-01-01T10:00:00Z"), None));
     }
 
-    /// Live timing for a content comparison of two real folders
+    /// Timing for a content comparison of two folders
     /// (`CMP_BENCH_A`/`CMP_BENCH_B`, default System32 vs SysWOW64).
     #[test]
     #[ignore]

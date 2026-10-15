@@ -1,4 +1,4 @@
-/** Typed wrappers around the Phase 8 network-share commands. */
+/** Network share commands. */
 import { invoke } from "@tauri-apps/api/core";
 import type { AccessRightEntry, NetworkSession, NetworkShare, ReadSpeedResult, ShareConnection } from "@/models/network";
 
