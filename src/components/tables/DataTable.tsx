@@ -11,6 +11,8 @@ export interface DataTableColumn<T> {
   minWidth?: number;
   align?: "left" | "right" | "center";
   sortAccessor?: (row: T) => string | number;
+  /** Takes the table's leftover width (default: the widest column). */
+  grow?: boolean;
   render: (row: T) => ReactNode;
 }
 
@@ -120,6 +122,12 @@ export function DataTable<T>({
     return () => cancelAnimationFrame(frame);
   }, [density, scrollRef]);
 
+  // Leftover width goes to one column, so a wide table has no empty strip
+  // on the right; a narrow one scrolls sideways instead.
+  const growKey = (columns.find((c) => c.grow) ?? [...columns].sort((a, b) => (colWidths[b.key] ?? DEFAULT_WIDTH) - (colWidths[a.key] ?? DEFAULT_WIDTH))[0])?.key;
+  const extra = Math.max(0, Math.floor(size.width) - totalWidth - 2);
+  const widthOf = (key: string) => (colWidths[key] ?? DEFAULT_WIDTH) + (key === growKey ? extra : 0);
+
   const windowStart = Math.max(0, Math.floor(scrollTop / rowHeight) - OVERSCAN);
   const windowEnd = Math.min(
     sortedRows.length,
@@ -137,7 +145,7 @@ export function DataTable<T>({
       <div style={{ minWidth: totalWidth }}>
         <div className="sticky top-0 z-10 flex border-b border-border bg-surface-alt">
           {columns.map((col) => {
-            const width = colWidths[col.key] ?? DEFAULT_WIDTH;
+            const width = widthOf(col.key);
             const isSorted = sort.key === col.key;
             return (
               <div
@@ -202,7 +210,7 @@ export function DataTable<T>({
                 {columns.map((col) => (
                   <div
                     key={col.key}
-                    style={{ width: colWidths[col.key] ?? DEFAULT_WIDTH }}
+                    style={{ width: widthOf(col.key) }}
                     className={clsx(
                       "flex shrink-0 items-center gap-1.5 truncate px-2.5",
                       col.align === "right" && "justify-end",

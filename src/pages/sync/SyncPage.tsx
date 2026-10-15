@@ -188,11 +188,17 @@ export function SyncPage() {
       <PageHeader title="Sync / Incremental" description="Synchronize directories with advanced options; copy only new or changed files." />
 
       <div className="flex items-stretch gap-3">
-        <Card title="Source" className="flex-1">
-          <LocationPicker value={source} onChange={setSource} placeholder="Source folder" />
-        </Card>
-        <Card title="Destination" className="flex-1">
-          <LocationPicker value={destination} onChange={setDestination} placeholder="Destination folder" />
+        {/* One card for both locations: two cards side by side were mostly
+            empty space next to the taller option cards. */}
+        <Card title="Source & Destination" className="flex-1" bodyClassName="flex flex-col gap-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-fg-muted">Source</label>
+            <LocationPicker value={source} onChange={setSource} placeholder="Source folder" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-fg-muted">Destination</label>
+            <LocationPicker value={destination} onChange={setDestination} placeholder="Destination folder" />
+          </div>
         </Card>
         <Card title="Sync Mode" className="w-[190px] shrink-0">
           <RadioGroup

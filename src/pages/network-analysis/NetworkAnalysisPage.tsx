@@ -320,7 +320,9 @@ export function NetworkAnalysisPage() {
 
       {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx
           (PHASE4.md) - without it the Treemap's measured height is 0. */}
-      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
+      {/* min-h: in a small window the page scrolls rather than the
+          treemap/results collapsing to nothing. */}
+      <div className="grid min-h-[300px] flex-1 auto-rows-fr grid-cols-[1fr_280px] gap-3 2xl:grid-cols-[1fr_300px]">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-3 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "overview" &&
             (isReal ? (
@@ -513,7 +515,9 @@ export function NetworkAnalysisPage() {
             ))}
         </Card>
 
-        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
+        {/* Cards keep their height and the column scrolls, instead of the
+            cards being squeezed and clipped. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5 [&>*]:shrink-0">
           <Card
             title="Read Speed"
             action={

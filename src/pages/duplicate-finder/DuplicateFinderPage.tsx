@@ -383,7 +383,9 @@ export function DuplicateFinderPage() {
           same shared layout bug (this page doesn't use Treemap, but the
           fix is the same generally-correct "actually fill available
           height" behavior either way). */}
-      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
+      {/* min-h: in a small window the page scrolls rather than the
+          treemap/results collapsing to nothing. */}
+      <div className="grid min-h-[300px] flex-1 auto-rows-fr grid-cols-[1fr_280px] gap-3 2xl:grid-cols-[1fr_300px]">
         <Card padded={false} bodyClassName="min-h-0" className="min-h-0 overflow-y-auto">
           {tab === "results" ? (
             groups.length === 0 ? (
@@ -529,7 +531,9 @@ export function DuplicateFinderPage() {
           )}
         </Card>
 
-        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
+        {/* Cards keep their height and the column scrolls, instead of the
+            cards being squeezed and clipped. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5 [&>*]:shrink-0">
           <Card title="Preview" bodyClassName="flex flex-col items-center gap-2 p-3">
             <div className="flex h-24 w-24 items-center justify-center rounded-md border border-border-strong bg-surface-alt">
               <ImageIcon size={28} className="text-fg-subtle" />

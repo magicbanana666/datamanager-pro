@@ -182,8 +182,8 @@ export function SchedulerPage() {
 
       <div className="grid min-h-0 flex-1 grid-cols-[1fr_340px] gap-3">
         <div className="flex min-h-0 min-w-0 flex-col gap-3">
-          {/* flex-none: see the identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md). */}
-          <Card padded={false} bodyClassName="h-[240px] flex-none">
+          {/* The task list gets most of the height; the tabs below share the rest. */}
+          <Card padded={false} className="min-h-[180px] flex-[3]">
             <DataTable
               columns={columns}
               rows={tasks}
@@ -198,7 +198,7 @@ export function SchedulerPage() {
           <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
           {tab === "history" && (
-            <Card padded={false} bodyClassName="flex-1 overflow-y-auto" className="min-h-0 flex-1">
+            <Card padded={false} bodyClassName="flex-1 overflow-y-auto" className="min-h-[140px] flex-[2]">
               <table className="w-full text-[12.5px]">
                 <thead className="sticky top-0 bg-surface-alt">
                   <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
@@ -247,7 +247,7 @@ export function SchedulerPage() {
             </Card>
           )}
           {tab === "upcoming" && (
-            <Card bodyClassName="flex flex-col gap-1.5" className="min-h-0 flex-1 overflow-y-auto">
+            <Card bodyClassName="flex flex-col gap-1.5" className="min-h-[140px] flex-[2] overflow-y-auto">
               {nextUp.length === 0 && <p className="text-[12.5px] text-fg-subtle">No enabled tasks.</p>}
               {nextUp.map((t) => (
                 <div key={t.id} className="flex items-center justify-between rounded-md border border-border bg-surface-alt px-2.5 py-2 text-[12.5px]">
@@ -258,7 +258,7 @@ export function SchedulerPage() {
             </Card>
           )}
           {tab === "settings" && (
-            <Card className="min-h-0 flex-1 overflow-y-auto" bodyClassName="flex flex-col gap-3">
+            <Card className="min-h-[140px] flex-[2] overflow-y-auto" bodyClassName="flex flex-col gap-3">
               <Checkbox
                 checked={settings.runMissedOnStartup}
                 onChange={(v) => void store.updateSettings({ runMissedOnStartup: v })}

@@ -244,21 +244,27 @@ export function ComparisonPage() {
       <PageHeader title="Compare Locations" description="Compare two folders, drives or network locations and see what's different." />
 
       <div className="flex items-stretch gap-3">
-        <Card title="Location A" className="flex-1">
-          <LocationPicker value={locationA} onChange={setLocationA} />
-        </Card>
-        <button
-          onClick={() => {
-            setLocationA(locationB);
-            setLocationB(locationA);
-          }}
-          className="mt-6 flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-strong bg-surface text-fg-muted hover:text-fg cursor-pointer"
-          title="Swap locations"
-        >
-          <ArrowRightLeft size={15} />
-        </button>
-        <Card title="Location B" className="flex-1">
-          <LocationPicker value={locationB} onChange={setLocationB} />
+        {/* Both locations in one card (two cards were mostly empty next
+            to the Options card), with the swap button between them. */}
+        <Card title="Locations" className="flex-1" bodyClassName="flex flex-col gap-2">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-fg-muted">Location A</label>
+            <LocationPicker value={locationA} onChange={setLocationA} />
+          </div>
+          <button
+            onClick={() => {
+              setLocationA(locationB);
+              setLocationB(locationA);
+            }}
+            className="flex items-center gap-1.5 self-start rounded-md px-1.5 py-0.5 text-[11.5px] text-fg-muted hover:bg-surface-hover hover:text-fg cursor-pointer"
+            title="Swap locations"
+          >
+            <ArrowRightLeft size={13} className="rotate-90" /> Swap
+          </button>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-fg-muted">Location B</label>
+            <LocationPicker value={locationB} onChange={setLocationB} />
+          </div>
         </Card>
         <Card title="Options" className="w-[300px] shrink-0">
           <div className="flex flex-col gap-2">
@@ -412,10 +418,9 @@ export function ComparisonPage() {
       <Card
         title="Detailed Comparison"
         padded={false}
-        // flex-none: cancels Card's default flex-1 (flex-basis:0%), which
-        // otherwise beats this fixed height in a flex-col layout - see
-        // the identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md).
-        bodyClassName="h-[280px] flex-none"
+        // Takes the height left over, so the action bar below stays in the
+        // window (a fixed 280px pushed it out).
+        className="min-h-[220px] flex-1"
         action={
           <div className="flex items-center gap-2 text-[11.5px] text-fg-subtle">
             {isReal && statusTotal > visibleRows.length && hiddenCategories.size === 0 && (

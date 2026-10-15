@@ -286,7 +286,7 @@ export function FileSearchPage() {
         </Card>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[210px_1fr_300px] gap-3">
+      <div className="grid min-h-[320px] flex-1 grid-cols-[190px_1fr_275px] gap-3 2xl:grid-cols-[210px_1fr_300px]">
         <Card title="Filters" bodyClassName="flex flex-col gap-3 p-3" className="min-h-0 overflow-y-auto">
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] font-medium text-fg-muted">File Types</label>

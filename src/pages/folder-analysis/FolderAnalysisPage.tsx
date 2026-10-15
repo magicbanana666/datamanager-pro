@@ -69,13 +69,10 @@ export function FolderAnalysisPage() {
     return root.children?.[0] ?? null;
   });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
-  const [options, setOptions] = useState({
-    includeSubfolders: true,
-    followJunctions: true,
-    showHiddenFiles: false,
-    calculateFolderSizes: true,
-    fastScan: true,
-  });
+  // The scan options that exist: hidden/system files (default from
+  // Settings > Scanning). Subfolders are always included and junctions
+  // never followed, so those aren't options.
+  const [includeHidden, setIncludeHidden] = useState(() => scanOptionsFromSettings().showHidden);
   const setStatusText = useUiStore((s) => s.setStatusText);
   const { currentPath, directorySummary, loading: browsing, error: browseError, browse } = useFilesystemStore();
   const realScan = useScanStore();
@@ -181,7 +178,7 @@ export function FolderAnalysisPage() {
 
   function startScan() {
     setStatusText(`Scanning ${location}...`);
-    void realScan.start(location, scanOptionsFromSettings());
+    void realScan.start(location, { ...scanOptionsFromSettings(), showHidden: includeHidden, showSystem: includeHidden });
     void browse(location);
   }
 
@@ -315,14 +312,12 @@ export function FolderAnalysisPage() {
           </div>
         </Card>
 
-        <Card title="Scan Options" className="w-[260px] shrink-0">
-          <div className="grid grid-cols-1 gap-2">
-            <Checkbox checked={options.includeSubfolders} onChange={(v) => setOptions((o) => ({ ...o, includeSubfolders: v }))} label="Include subfolders" />
-            <Checkbox checked={options.followJunctions} onChange={(v) => setOptions((o) => ({ ...o, followJunctions: v }))} label="Follow junctions" />
-            <Checkbox checked={options.showHiddenFiles} onChange={(v) => setOptions((o) => ({ ...o, showHiddenFiles: v }))} label="Show hidden files" />
-            <Checkbox checked={options.calculateFolderSizes} onChange={(v) => setOptions((o) => ({ ...o, calculateFolderSizes: v }))} label="Calculate folder sizes" />
-            <Checkbox checked={options.fastScan} onChange={(v) => setOptions((o) => ({ ...o, fastScan: v }))} label="Fast scan (recommended)" />
-          </div>
+        <Card title="Scan Options" className="w-[260px] shrink-0" bodyClassName="flex flex-col gap-2">
+          <Checkbox checked={includeHidden} onChange={setIncludeHidden} label="Include hidden and system files" />
+          <p className="text-[11.5px] leading-snug text-fg-muted">
+            Every subfolder is scanned; junctions and symbolic links are never followed. Whole NTFS drives are read from the MFT
+            when the app runs as administrator.
+          </p>
         </Card>
       </div>
 
@@ -332,7 +327,9 @@ export function FolderAnalysisPage() {
 
       {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx -
           same shared layout bug, same fix. */}
-      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
+      {/* min-h: in a small window the page scrolls rather than the
+          treemap/results collapsing to nothing. */}
+      <div className="grid min-h-[300px] flex-1 auto-rows-fr grid-cols-[1fr_280px] gap-3 2xl:grid-cols-[1fr_300px]">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-2 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "treemap" && (
             <>
@@ -437,7 +434,9 @@ export function FolderAnalysisPage() {
           )}
         </Card>
 
-        <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
+        {/* Cards keep their height and the column scrolls, instead of the
+            cards being squeezed and clipped. */}
+        <div className="flex min-h-0 min-w-0 flex-col gap-3 overflow-y-auto pr-0.5 [&>*]:shrink-0">
           {/* flex-none: cancels Card's default flex-1 (flex-basis:0%),
               which otherwise beats this fixed height in a flex-col layout
               - see the comment above the treemap/sidebar grid. */}
