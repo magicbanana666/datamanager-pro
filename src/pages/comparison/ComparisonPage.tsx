@@ -41,6 +41,15 @@ import { useComparisonStore } from "@/state/comparisonStore";
 import { categoryComparison, sideCategoryStats, toUiRows } from "@/utils/comparison";
 import { formatBytes, formatDate, formatNumber } from "@/utils/format";
 import { toast } from "@/state/toastStore";
+import { Dialog } from "@/components/dialogs/Dialog";
+import { confirmAction, pickFolder, pickSaveFile } from "@/api/dialog";
+import { deleteFiles, saveTextFile } from "@/api/fileops";
+import { openPath } from "@/api/search";
+import { openFolder } from "@/api/transfer";
+import { toAppError } from "@/api/backend";
+import { DEFAULT_TRANSFER_OPTIONS } from "@/models/transfer";
+import { useFileActionStore } from "@/state/transferStore";
+import { toCsv } from "@/utils/csv";
 
 const STATUS_MAP: Record<string, ComparisonStatus> = {
   differences: "different",
@@ -73,6 +82,11 @@ export function ComparisonPage() {
   const [tab, setTab] = useState("summary");
   const [selectedRow, setSelectedRow] = useState<ComparisonRow | null>(null);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());
+  // Rows deleted or excluded this session - hidden from the table.
+  const [hiddenRows, setHiddenRows] = useState<Set<string>>(new Set());
+  const [side, setSide] = useState<"a" | "b">("a");
+  const [propertiesOpen, setPropertiesOpen] = useState(false);
+  const fileAction = useFileActionStore();
 
   const isReal = run.status === "completed" && !!run.result;
   const running = run.status === "running";
@@ -107,8 +121,10 @@ export function ComparisonPage() {
 
   const visibleRows = useMemo(() => {
     const status = STATUS_MAP[tab];
-    return allRows.filter((r) => (!status || r.status === status) && !hiddenCategories.has(r.category));
-  }, [tab, allRows, hiddenCategories]);
+    return allRows.filter(
+      (r) => (!status || r.status === status) && !hiddenCategories.has(r.category) && !hiddenRows.has(r.id),
+    );
+  }, [tab, allRows, hiddenCategories, hiddenRows]);
 
   const statusTotal = STATUS_MAP[tab]
     ? {
@@ -126,7 +142,89 @@ export function ComparisonPage() {
       : null;
 
   function startComparison() {
+    setHiddenRows(new Set());
     void run.start(locationA, locationB, { mode, ...options });
+  }
+
+  /** The selected row's file on the chosen side, as (file, folder). */
+  function selectedFile(): [string, string] | null {
+    if (!isReal) {
+      toast.demoNoFilesModified();
+      return null;
+    }
+    if (!selectedRow) {
+      toast.warning("Select a file in the table first.");
+      return null;
+    }
+    const folder = side === "a" ? selectedRow.pathA : selectedRow.pathB;
+    if (!folder) {
+      toast.warning(`This file doesn't exist in Location ${side.toUpperCase()}.`);
+      return null;
+    }
+    return [fullPath(folder, selectedRow.name), folder];
+  }
+
+  function withFile(action: (path: string, folder: string) => Promise<void>) {
+    const file = selectedFile();
+    if (file) action(...file).catch((e) => toast.danger(toAppError(e).message));
+  }
+
+  async function transferSelected(mode: "copy" | "move") {
+    const file = selectedFile();
+    if (!file) return;
+    const destination = await pickFolder();
+    if (!destination) return;
+    void fileAction.start({
+      source: file[1],
+      destination,
+      mode,
+      collision: "rename-new",
+      options: { ...DEFAULT_TRANSFER_OPTIONS, verifyAfterTransfer: true },
+      files: [file[0]],
+    });
+  }
+
+  async function deleteSelected() {
+    const file = selectedFile();
+    if (!file || !selectedRow) return;
+    const ok = await confirmAction(`Move ${file[0]} to the Recycle Bin?`, "Delete file", "Delete");
+    if (!ok) return;
+    try {
+      const outcome = await deleteFiles([file[0]], true);
+      if (outcome.errors.length) {
+        toast.danger(outcome.errors[0].message, "Delete failed");
+        return;
+      }
+      toast.success("Moved to the Recycle Bin. Compare again to refresh the totals.");
+      setHiddenRows((s) => new Set(s).add(selectedRow.id));
+      setSelectedRow(null);
+    } catch (err) {
+      toast.danger(toAppError(err).message);
+    }
+  }
+
+  async function exportReport() {
+    const path = await pickSaveFile("comparison.csv", [{ name: "CSV", extensions: ["csv"] }]);
+    if (!path) return;
+    const csv = toCsv(
+      ["Status", "Name", "Path A", "Path B", "Size A", "Size B", "Modified A", "Modified B", "Type"],
+      allRows
+        .filter((r) => !hiddenRows.has(r.id))
+        .map((r) => [STATUS_BADGE[r.status].label, r.name, r.pathA, r.pathB, r.sizeA, r.sizeB, r.modifiedA, r.modifiedB, r.category]),
+    );
+    saveTextFile(path, csv)
+      .then(() => toast.success("Comparison report exported."))
+      .catch((e) => toast.danger(toAppError(e).message));
+  }
+
+  async function saveComparison() {
+    if (!result) return;
+    const path = await pickSaveFile("comparison.json", [{ name: "JSON", extensions: ["json"] }]);
+    if (!path) return;
+    const saved = { savedAt: new Date().toISOString(), mode, options, ...result };
+    saveTextFile(path, JSON.stringify(saved, null, 2))
+      .then(() => toast.success("Comparison saved."))
+      .catch((e) => toast.danger(toAppError(e).message));
   }
 
   const columns: DataTableColumn<ComparisonRow>[] = [
@@ -349,21 +447,68 @@ export function ComparisonPage() {
         />
       </Card>
 
-      {/* File actions (open, copy, move, delete, ...) arrive with the
-          Phase 6 file-operations engine - this phase is read-only. */}
+      {/* Actions on the selected row, on the copy in the chosen side. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Button icon={Eye} onClick={() => toast.demo()}>Open</Button>
-        <Button icon={FolderOpen} onClick={() => toast.demo()}>Open Location</Button>
-        <Button icon={Copy} onClick={() => toast.demo()}>Copy To...</Button>
-        <Button icon={ArrowRightLeft} onClick={() => toast.demo()}>Move To...</Button>
-        <Button icon={Trash2} variant="danger" onClick={() => toast.demoNoFilesModified()}>Delete</Button>
-        <Button icon={FileX2} onClick={() => toast.demo()}>Exclude</Button>
-        <Button icon={Info} onClick={() => toast.demo()}>Properties</Button>
+        <Select
+          value={side}
+          onChange={(e) => setSide(e.target.value as "a" | "b")}
+          options={[
+            { value: "a", label: "Location A copy" },
+            { value: "b", label: "Location B copy" },
+          ]}
+          className="w-[150px]"
+        />
+        <Button icon={Eye} onClick={() => withFile((path) => openPath(path))}>Open</Button>
+        <Button icon={FolderOpen} onClick={() => withFile((_, folder) => openFolder(folder))}>Open Location</Button>
+        <Button icon={Copy} disabled={fileAction.status === "running"} onClick={() => void transferSelected("copy")}>Copy To...</Button>
+        <Button icon={ArrowRightLeft} disabled={fileAction.status === "running"} onClick={() => void transferSelected("move")}>Move To...</Button>
+        <Button icon={Trash2} variant="danger" onClick={() => void deleteSelected()}>Delete</Button>
+        <Button
+          icon={FileX2}
+          disabled={!selectedRow}
+          onClick={() => {
+            if (!selectedRow) return;
+            setHiddenRows((s) => new Set(s).add(selectedRow.id));
+            setSelectedRow(null);
+          }}
+        >
+          Exclude
+        </Button>
+        <Button icon={Info} disabled={!selectedRow} onClick={() => setPropertiesOpen(true)}>Properties</Button>
+        {fileAction.status === "running" && (
+          <span className="text-[12px] text-fg-muted">
+            {fileAction.request?.mode === "move" ? "Moving" : "Copying"}... {formatBytes(fileAction.progress?.bytesDone ?? 0)} /{" "}
+            {formatBytes(fileAction.progress?.bytesTotal ?? 0)}
+          </span>
+        )}
         <div className="ml-auto flex items-center gap-2">
-          <Button icon={Download} onClick={() => toast.demo()}>Export Report</Button>
-          <Button icon={Save} variant="primary" onClick={() => toast.demo()}>Save Comparison</Button>
+          <Button icon={Download} disabled={!isReal} onClick={() => void exportReport()}>Export Report</Button>
+          <Button icon={Save} variant="primary" disabled={!isReal} onClick={() => void saveComparison()}>Save Comparison</Button>
         </div>
       </div>
+
+      <Dialog open={propertiesOpen && !!selectedRow} onClose={() => setPropertiesOpen(false)} title={selectedRow?.name ?? ""} width={560}>
+        {selectedRow && (
+          <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 text-[12.5px]">
+            <dt className="text-fg-muted">Status:</dt>
+            <dd className="text-fg">{STATUS_BADGE[selectedRow.status].label}</dd>
+            <dt className="text-fg-muted">Type:</dt>
+            <dd className="text-fg">{selectedRow.category}</dd>
+            <dt className="text-fg-muted">A:</dt>
+            <dd className="break-all text-fg">{selectedRow.pathA ? `${fullPath(selectedRow.pathA, selectedRow.name)}` : "-"}</dd>
+            <dt className="text-fg-muted">A size / date:</dt>
+            <dd className="text-fg">{selectedRow.sizeA != null ? `${formatBytes(selectedRow.sizeA)} · ${formatDate(selectedRow.modifiedA)}` : "-"}</dd>
+            <dt className="text-fg-muted">B:</dt>
+            <dd className="break-all text-fg">{selectedRow.pathB ? `${fullPath(selectedRow.pathB, selectedRow.name)}` : "-"}</dd>
+            <dt className="text-fg-muted">B size / date:</dt>
+            <dd className="text-fg">{selectedRow.sizeB != null ? `${formatBytes(selectedRow.sizeB)} · ${formatDate(selectedRow.modifiedB)}` : "-"}</dd>
+          </dl>
+        )}
+      </Dialog>
     </div>
   );
+}
+
+function fullPath(folder: string, name: string): string {
+  return `${folder.replace(/\\+$/, "")}\\${name}`;
 }

@@ -12,3 +12,6 @@ pub mod scan_analysis_service;
 pub mod scan_service;
 pub mod search_service;
 pub mod storage_service;
+pub mod sync_state;
+pub mod transfer_journal;
+pub mod transfer_service;

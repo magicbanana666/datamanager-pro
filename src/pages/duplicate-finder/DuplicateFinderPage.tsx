@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FolderPlus, ImageIcon, ScanSearch, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { Card } from "@/components/cards/Card";
@@ -14,7 +14,13 @@ import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { duplicateFileTypeStats, duplicateGroups as seedGroups } from "@/mock/duplicates";
 import type { DuplicateCriteriaId, DuplicateFileEntry, DuplicateGroup, HashJobProgress } from "@/models/duplicates";
-import { pickFolder } from "@/api/dialog";
+import { confirmAction, pickFolder, pickSaveFile } from "@/api/dialog";
+import { deleteFiles, saveTextFile } from "@/api/fileops";
+import { getTextPreview, openPath } from "@/api/search";
+import { toAppError } from "@/api/backend";
+import { DEFAULT_TRANSFER_OPTIONS } from "@/models/transfer";
+import { useFileActionStore } from "@/state/transferStore";
+import { toCsv } from "@/utils/csv";
 import { useDuplicateStore } from "@/state/duplicateStore";
 import { toast } from "@/state/toastStore";
 import {
@@ -150,6 +156,113 @@ export function DuplicateFinderPage() {
   const focusedGroup = groups.find((g) => g.files.some((f) => f.id === focusedFile?.id)) ?? null;
   const selectedFiles = groups.flatMap((g) => g.files.filter((f) => f.selected));
   const selectedBytes = selectedFiles.reduce((s, f) => s + f.size, 0);
+
+  /** Drops files that were deleted/moved away; a group left with one
+   * copy is no longer a duplicate. */
+  function removeFiles(paths: Set<string>) {
+    setGroups((gs) =>
+      gs
+        .map((g) => {
+          const files = g.files.filter((f) => !paths.has(f.id));
+          return files.length === g.files.length ? g : { ...g, files, wastedBytes: g.size * Math.max(0, files.length - 1) };
+        })
+        .filter((g) => g.files.length > 1),
+    );
+    if (focusedFile && paths.has(focusedFile.id)) setFocusedFile(null);
+  }
+
+  /** Refuses a selection that would leave a group without any copy. */
+  function checkSelection(): string[] | null {
+    if (!isReal) {
+      toast.demoNoFilesModified();
+      return null;
+    }
+    if (selectedFiles.length === 0) {
+      toast.warning("Select the copies to remove first (the keep rule pre-selects all but one per group).");
+      return null;
+    }
+    if (groups.some((g) => g.files.length > 0 && g.files.every((f) => f.selected))) {
+      toast.warning("Every copy in a group is selected - keep at least one.");
+      return null;
+    }
+    return selectedFiles.map((f) => f.id);
+  }
+
+  async function deleteSelected() {
+    const paths = checkSelection();
+    if (!paths) return;
+    const ok = await confirmAction(
+      `Move ${formatNumber(paths.length)} duplicate files (${formatBytes(selectedBytes)}) to the Recycle Bin?`,
+      "Delete selected files",
+      "Delete",
+    );
+    if (!ok) return;
+    try {
+      const outcome = await deleteFiles(paths, true);
+      removeFiles(new Set(outcome.deleted));
+      if (outcome.errors.length) {
+        toast.warning(
+          `${formatNumber(outcome.deleted.length)} deleted, ${formatNumber(outcome.errors.length)} failed: ${outcome.errors[0].message}`,
+          "Delete finished with errors",
+        );
+      } else {
+        toast.success(`${formatNumber(outcome.deleted.length)} files moved to the Recycle Bin.`);
+      }
+    } catch (err) {
+      toast.danger(toAppError(err).message);
+    }
+  }
+
+  // Moving goes through the transfer engine (progress, verification);
+  // once it completes, the moved files leave the groups.
+  const fileAction = useFileActionStore();
+  const [moveJobId, setMoveJobId] = useState<string | null>(null);
+  if (moveJobId && fileAction.jobId === moveJobId && fileAction.status === "completed" && fileAction.plan) {
+    setMoveJobId(null);
+    removeFiles(
+      new Set(fileAction.plan.rows.filter((r) => fileAction.rowStates[r.id]?.status === "done").map((r) => r.sourcePath)),
+    );
+  }
+
+  async function moveSelected() {
+    const paths = checkSelection();
+    if (!paths) return;
+    const destination = await pickFolder();
+    if (!destination) return;
+    await fileAction.start({
+      source: "Duplicate Finder selection",
+      destination,
+      mode: "move",
+      collision: "rename-new",
+      options: { ...DEFAULT_TRANSFER_OPTIONS, verifyAfterTransfer: true },
+      files: paths,
+    });
+    setMoveJobId(useFileActionStore.getState().jobId);
+  }
+
+  async function exportCsv() {
+    const path = await pickSaveFile("duplicates.csv", [{ name: "CSV", extensions: ["csv"] }]);
+    if (!path) return;
+    const csv = toCsv(
+      ["Group", "File", "Folder", "Size (bytes)", "Modified", "Keep"],
+      groups.flatMap((g, i) => g.files.map((f) => [i + 1, f.name, f.path, f.size, f.modified, f.isOriginal ? "yes" : ""])),
+    );
+    saveTextFile(path, csv)
+      .then(() => toast.success(`Exported ${formatNumber(groups.length)} groups.`))
+      .catch((e) => toast.danger(toAppError(e).message));
+  }
+
+  const [previewText, setPreviewText] = useState<{ path: string; text: string | null } | null>(null);
+  useEffect(() => {
+    if (tab !== "preview" || !focusedFile || !isReal) return;
+    let alive = true;
+    getTextPreview(focusedFile.id)
+      .then((text) => alive && setPreviewText({ path: focusedFile.id, text }))
+      .catch(() => alive && setPreviewText({ path: focusedFile.id, text: null }));
+    return () => {
+      alive = false;
+    };
+  }, [tab, focusedFile, isReal]);
   const running = run.status === "running";
   const percent = progressPercent(run.progress);
   const shownGroups = isReal && run.result ? run.result.groups.length : groups.length;
@@ -384,9 +497,28 @@ export function DuplicateFinderPage() {
                 ))}
               </tbody>
             </table>
+          ) : tab === "preview" ? (
+            !focusedFile ? (
+              <div className="flex h-full items-center justify-center text-xs text-fg-subtle">Select a file in the Results tab to preview it.</div>
+            ) : (
+              <div className="flex h-full min-h-0 flex-col gap-2 p-3">
+                <div className="flex items-center gap-2 text-[12px] text-fg-muted">
+                  <span className="min-w-0 flex-1 truncate">{focusedFile.id}</span>
+                  <Button size="sm" disabled={!isReal} onClick={() => openPath(focusedFile.id).catch((e) => toast.danger(toAppError(e).message))}>
+                    Open
+                  </Button>
+                </div>
+                <pre className="min-h-0 flex-1 overflow-auto rounded-md border border-border bg-surface-alt p-2 font-mono text-[11.5px] text-fg">
+                  {previewText?.path === focusedFile.id
+                    ? (previewText.text ?? "No text preview - this looks like a binary file. Use Open to view it.")
+                    : "Loading..."}
+                </pre>
+              </div>
+            )
           ) : (
-            <div className="flex h-full items-center justify-center text-xs text-fg-subtle">
-              Sample "{TABS.find((t) => t.id === tab)?.label}" view - Phase 1 preview.
+            <div className="flex h-full flex-col items-start gap-2 p-3 text-[12.5px] text-fg-muted">
+              <p>Export every group shown in Results as CSV (one row per file, with the copy the keep rule keeps marked).</p>
+              <Button disabled={!isReal || groups.length === 0} onClick={() => void exportCsv()}>Export CSV...</Button>
             </div>
           )}
         </Card>
@@ -423,12 +555,14 @@ export function DuplicateFinderPage() {
             <Button size="sm" disabled={!focusedGroup} onClick={() => focusedGroup && setGroupSelection(focusedGroup.id, false)}>
               Deselect All
             </Button>
-            {/* Deleting/moving files is Phase 6 (the copy/move engine) -
-                this phase is strictly read-only. */}
-            <Button size="sm" variant="danger" icon={Trash2} onClick={() => toast.demoNoFilesModified()}>
+            <Button size="sm" variant="danger" icon={Trash2} onClick={() => void deleteSelected()}>
               Delete Selected Files
             </Button>
-            <Button size="sm" onClick={() => toast.demo()}>Move to Folder...</Button>
+            <Button size="sm" disabled={fileAction.status === "running"} onClick={() => void moveSelected()}>
+              {fileAction.status === "running" && moveJobId
+                ? `Moving... ${formatNumber(fileAction.progress?.filesDone ?? 0)} / ${formatNumber(fileAction.progress?.filesTotal ?? 0)}`
+                : "Move to Folder..."}
+            </Button>
           </Card>
           <Card title="Keep Rules (Auto Select)" bodyClassName="flex flex-col gap-2 p-3">
             <Select

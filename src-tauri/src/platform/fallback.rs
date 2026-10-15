@@ -52,3 +52,28 @@ pub fn try_mft_scan(
 pub fn file_identity(_file: &std::fs::File) -> Option<(u32, u64)> {
     None
 }
+
+pub fn copy_dacl(_source: &Path, _dest: &Path) -> Result<(), String> {
+    Err("NTFS permissions are only implemented for Windows".to_string())
+}
+
+pub fn copy_attributes(_source: &Path, _dest: &Path) -> Result<(), String> {
+    Ok(())
+}
+
+pub fn clear_readonly(path: &Path) {
+    if let Ok(meta) = std::fs::metadata(path) {
+        let mut perms = meta.permissions();
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        let _ = std::fs::set_permissions(path, perms);
+    }
+}
+
+pub fn recycle(_path: &Path) -> Result<(), String> {
+    Err("the Recycle Bin is only implemented for Windows".to_string())
+}
+
+pub fn free_space_bytes(_path: &Path) -> Option<u64> {
+    None
+}

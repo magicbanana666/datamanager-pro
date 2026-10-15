@@ -1,15 +1,15 @@
 //! DataManager Pro - Tauri backend entry point.
 //!
-//! **Phase 3 status: read-only, now with a real recursive scanner.**
-//! This crate can enumerate storage volumes, browse folders, read
-//! file/folder metadata, and run a real, cancellable, multithreaded
-//! (or best-effort MFT) recursive scan - see `commands::filesystem`,
-//! `commands::storage` and `commands::scan`. It still cannot create,
-//! delete, rename, move, copy, or write to anything; the transfer
-//! engine, sync engine, network/port scanning and scheduler execution
-//! are later phases (see `commands::network`, `commands::scheduler`,
-//! `commands::transfer` for their still-empty placeholder modules, and
-//! PHASE2.md / PHASE3.md / ROADMAP.md for details).
+//! Read-only engines: volumes, folder browsing and metadata
+//! (`commands::filesystem`, `commands::storage`), the recursive scanner
+//! (`commands::scan`), and search, comparison and duplicate detection
+//! (`commands::search`, `commands::comparison`, `commands::duplicates`).
+//!
+//! Since Phase 6 the app also **writes**, but only through explicit user
+//! actions: the transfer engine (`commands::transfer` - copy, move and
+//! sync, journaled and resumable) and one-shot file operations
+//! (`commands::fileops` - delete selected files, save exports). See
+//! ROADMAP.md and the PHASE*.md files.
 
 mod commands;
 mod models;
@@ -19,6 +19,7 @@ mod utils;
 
 use commands::comparison::{cancel_comparison, start_comparison};
 use commands::duplicates::{cancel_duplicate_scan, start_duplicate_scan};
+use commands::fileops::{delete_files, save_text_file};
 use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
@@ -28,6 +29,11 @@ use commands::scan::{
 use commands::search::{cancel_file_search, get_text_preview, open_path, start_file_search};
 use commands::storage::list_storage_volumes;
 use commands::system::{get_app_version, get_system_info, ping_backend};
+use commands::transfer::{
+    cancel_shutdown, cancel_transfer, discard_interrupted_transfer, execute_transfer,
+    list_interrupted_transfers, open_folder, resume_interrupted_transfer, schedule_shutdown,
+    set_transfer_paused, start_transfer, TransferRegistry,
+};
 use commands::JobRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -48,6 +54,7 @@ pub fn run() {
         .manage(ScanRegistry::default())
         .manage(ScanTreeCache::default())
         .manage(JobRegistry::default())
+        .manage(TransferRegistry::default())
         .invoke_handler(tauri::generate_handler![
             get_app_version,
             get_system_info,
@@ -70,6 +77,18 @@ pub fn run() {
             cancel_file_search,
             get_text_preview,
             open_path,
+            start_transfer,
+            execute_transfer,
+            set_transfer_paused,
+            cancel_transfer,
+            list_interrupted_transfers,
+            resume_interrupted_transfer,
+            discard_interrupted_transfer,
+            schedule_shutdown,
+            cancel_shutdown,
+            open_folder,
+            delete_files,
+            save_text_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

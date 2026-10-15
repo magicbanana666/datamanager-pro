@@ -25,4 +25,3 @@ export const searchResults: SearchResultRow[] = [
   { id: "f15", name: "report_old.doc", path: "D:\\Data\\Projects\\Archive\\", size: mb(1.2), type: "Word 97-2003", modified: "2026-08-24T17:55:00", matchedTerm: "report" },
 ];
 
-export const savedSearches = ["Reports", "Large videos > 1 GB", "Client invoices 2026", "Temp cleanup candidates"];

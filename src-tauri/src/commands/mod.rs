@@ -1,13 +1,13 @@
 //! Tauri command handlers, grouped by feature area.
 //!
-//! `system`, `filesystem` and `storage` back the real, read-only Phase 1
-//! and Phase 2 surface. `network`, `scheduler` and `transfer` remain
-//! documented, empty placeholders reserved for later phases so the
-//! module layout doesn't need to change when real network scanning,
-//! scheduling and transfer engines are added.
+//! `system`, `filesystem`, `storage`, `scan`, `search`, `comparison` and
+//! `duplicates` are read-only. `transfer` and `fileops` (Phase 6/7)
+//! modify files, only on explicit user action. `network` and
+//! `scheduler` remain placeholders for later phases.
 
 pub mod comparison;
 pub mod duplicates;
+pub mod fileops;
 pub mod filesystem;
 pub mod scan;
 pub mod search;

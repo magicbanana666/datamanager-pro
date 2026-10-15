@@ -8,7 +8,9 @@
 **Phase 4 — Complete** (real Treemap/charts/tables, see
 [PHASE4.md](./PHASE4.md)).
 **Phase 5 — Complete** (real search/comparison/duplicates, see
-[PHASE5.md](./PHASE5.md)). The phases below are suggested milestones
+[PHASE5.md](./PHASE5.md)).
+**Phases 6 & 7 — Complete** (copy/move/sync engine with journal and
+resume, see [PHASE6.md](./PHASE6.md)). The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
 and simply swap mock data sources for real ones behind the same
@@ -59,15 +61,17 @@ a real duplicate-detection engine (hash-based grouping, hard-link
 aware), plus the Folder Analysis Duplicates tab. All read-only. See
 [PHASE5.md](./PHASE5.md).
 
-### Phase 6 — Copy/move engine with journaling & resume
+### ~~Phase 6 — Copy/move engine with journaling & resume~~ ✅ Complete
 A real, cancellable/resumable copy/move engine with a transaction
-journal so interrupted transfers can resume. Wire up Data Transfer's
-collision policies, verification, and permission preservation for real.
+journal so interrupted transfers can resume, with real collision
+policies, verification and permission preservation, plus the file
+actions on Duplicate Finder and Compare Locations. See
+[PHASE6.md](./PHASE6.md).
 
-### Phase 7 — Incremental sync & mirror engine
-Build the real Sync / Incremental engine (mirror, incremental, update-
-newer, two-way) on top of the Phase 6 journal, including real conflict
-detection or the two-way sync change tracker.
+### ~~Phase 7 — Incremental sync & mirror engine~~ ✅ Complete
+Mirror, incremental, update-newer and two-way sync on the same engine,
+with a two-way change tracker and conflict resolution. See
+[PHASE6.md](./PHASE6.md).
 
 ### Phase 8 — Network share support & IP/port scanning
 Real SMB share browsing/scanning (replacing `src/mock/network.ts`) and

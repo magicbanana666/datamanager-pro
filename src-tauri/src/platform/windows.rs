@@ -13,7 +13,11 @@
 //! a mutation. Kept isolated in this module (per the Phase 2 brief) so
 //! the rest of the crate never touches `windows::Win32` directly.
 
+mod fileops;
 mod mft;
+pub use fileops::{
+    clear_readonly, copy_attributes, copy_dacl, free_space_bytes, recycle,
+};
 pub use mft::try_mft_scan;
 
 use crate::models::errors::AppError;

@@ -18,7 +18,9 @@ import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { HighlightText } from "@/components/controls/HighlightText";
 import { getTextPreview, openPath } from "@/api/search";
 import { toAppError } from "@/api/backend";
-import { savedSearches, searchResults } from "@/mock/search";
+import { searchResults } from "@/mock/search";
+import { Dialog } from "@/components/dialogs/Dialog";
+import { useSavedSearchStore, type SavedSearch } from "@/state/savedSearchStore";
 import { FILE_TYPE_CATEGORIES } from "@/models/common";
 import type { SearchResultRow } from "@/models/search";
 import { useSearchStore } from "@/state/searchStore";
@@ -77,6 +79,32 @@ export function FileSearchPage() {
   const [detailTab, setDetailTab] = useState("preview");
   const [selected, setSelected] = useState<SearchResultRow | null>(null);
   const [preview, setPreview] = useState<{ path: string; text: string | null } | null>(null);
+  const saved = useSavedSearchStore();
+  const [savedName, setSavedName] = useState("");
+  const [saveDialog, setSaveDialog] = useState(false);
+  const [manageDialog, setManageDialog] = useState(false);
+
+  function applySaved(name: string) {
+    const s = saved.searches.find((x) => x.name === name);
+    if (!s) return;
+    setSavedName(name);
+    setLocation(s.location);
+    setTerm(s.term);
+    setOptions((o) => ({ ...o, ...s.options }));
+    setCategory(s.category);
+    setMinMb(s.minMb);
+    setMaxMb(s.maxMb);
+    setRange(s.range);
+  }
+
+  function saveCurrent() {
+    const name = savedName.trim();
+    if (!name) return;
+    const search: SavedSearch = { name, location, term, options, category, minMb, maxMb, range };
+    saved.save(search);
+    setSaveDialog(false);
+    toast.success(`Saved search "${name}".`);
+  }
 
   const isReal = run.status === "completed" && !!run.result;
   const running = run.status === "running";
@@ -242,10 +270,17 @@ export function FileSearchPage() {
         </Card>
         <Card title="Saved Searches" className="w-[220px] shrink-0">
           <div className="flex flex-col gap-2">
-            <Select options={savedSearches.map((s) => ({ value: s, label: s }))} />
+            <Select
+              value={saved.searches.some((s) => s.name === savedName) ? savedName : ""}
+              onChange={(e) => applySaved(e.target.value)}
+              options={[
+                { value: "", label: saved.searches.length ? "Choose a saved search..." : "No saved searches yet" },
+                ...saved.searches.map((s) => ({ value: s.name, label: s.name })),
+              ]}
+            />
             <div className="flex gap-2">
-              <Button size="sm" onClick={() => toast.demo()}>Save</Button>
-              <Button size="sm" onClick={() => toast.demo()}>Manage...</Button>
+              <Button size="sm" onClick={() => setSaveDialog(true)}>Save</Button>
+              <Button size="sm" disabled={saved.searches.length === 0} onClick={() => setManageDialog(true)}>Manage...</Button>
             </div>
           </div>
         </Card>
@@ -468,6 +503,40 @@ export function FileSearchPage() {
           )}
         </Card>
       </div>
+
+      <Dialog
+        open={saveDialog}
+        onClose={() => setSaveDialog(false)}
+        title="Save Search"
+        footer={
+          <>
+            <Button onClick={() => setSaveDialog(false)}>Cancel</Button>
+            <Button variant="primary" disabled={!savedName.trim()} onClick={saveCurrent}>Save</Button>
+          </>
+        }
+      >
+        <div className="flex flex-col gap-1.5">
+          <label className="text-[11px] font-medium text-fg-muted">Name (an existing name is replaced)</label>
+          <TextInput value={savedName} autoFocus onChange={(e) => setSavedName(e.target.value)} onKeyDown={(e) => e.key === "Enter" && saveCurrent()} />
+          <p className="text-[11.5px] text-fg-muted">Saves the location, search text, options and filters.</p>
+        </div>
+      </Dialog>
+
+      <Dialog open={manageDialog} onClose={() => setManageDialog(false)} title="Saved Searches">
+        <div className="flex flex-col gap-1.5">
+          {saved.searches.length === 0 && <p className="text-[12.5px] text-fg-muted">No saved searches.</p>}
+          {saved.searches.map((s) => (
+            <div key={s.name} className="flex items-center gap-2 text-[12.5px]">
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-fg">{s.name}</div>
+                <div className="truncate text-[11.5px] text-fg-muted">"{s.term}" in {s.location}</div>
+              </div>
+              <Button size="sm" onClick={() => { applySaved(s.name); setManageDialog(false); }}>Load</Button>
+              <Button size="sm" variant="ghost" icon={X} onClick={() => saved.remove(s.name)}>Delete</Button>
+            </div>
+          ))}
+        </div>
+      </Dialog>
     </div>
   );
 }
