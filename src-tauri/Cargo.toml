@@ -71,3 +71,13 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# The post-commit build (scripts/build-after-commit.ps1): optimized like
+# release, but without LTO and incremental, so after a commit only what
+# changed is rebuilt - minutes instead of a full LTO build each time.
+# Installers and releases keep using [profile.release].
+[profile.quick]
+inherits = "release"
+lto = false
+codegen-units = 64
+incremental = true
