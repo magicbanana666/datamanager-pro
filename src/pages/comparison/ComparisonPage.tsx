@@ -64,10 +64,16 @@ const CATEGORY_LABELS = FILE_TYPE_CATEGORIES.map((c) => c.label);
 
 export function ComparisonPage() {
   const run = useComparisonStore();
-  const [locationA, setLocationA] = useState(() => run.result?.a.location ?? "D:\\Data\\Projects");
-  const [locationB, setLocationB] = useState(() => run.result?.b.location ?? "E:\\Archive\\Projects");
-  const [mode, setMode] = useState<ComparisonMode>("content-hash");
-  const [options, setOptions] = useState({ includeSubfolders: true, ignoreTimestamps: false, ignoreSmallFiles: false });
+  // The last run (or an opened project) sets these; a first visit starts empty.
+  const [locationA, setLocationA] = useState(() => run.args?.[0] ?? run.result?.a.location ?? "");
+  const [locationB, setLocationB] = useState(() => run.args?.[1] ?? run.result?.b.location ?? "");
+  const [mode, setMode] = useState<ComparisonMode>(() => run.args?.[2].mode ?? "content-hash");
+  const [options, setOptions] = useState(() => {
+    const last = run.args?.[2];
+    return last
+      ? { includeSubfolders: last.includeSubfolders, ignoreTimestamps: last.ignoreTimestamps, ignoreSmallFiles: last.ignoreSmallFiles }
+      : { includeSubfolders: true, ignoreTimestamps: false, ignoreSmallFiles: false };
+  });
   const [tab, setTab] = useState("summary");
   const [selectedRow, setSelectedRow] = useState<ComparisonRow | null>(null);
   const [hiddenCategories, setHiddenCategories] = useState<Set<string>>(new Set());

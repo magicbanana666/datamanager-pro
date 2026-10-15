@@ -45,7 +45,7 @@ export function FolderAnalysisPage() {
   const navigate = useNavigate();
   // Follows the active/last scan, so navigating away mid-scan and back
   // doesn't reset this to the default while a different path is scanning.
-  const [location, setLocation] = useState(() => useScanStore.getState().path ?? "D:\\Data\\Projects");
+  const [location, setLocation] = useState(() => useScanStore.getState().path ?? "");
   const [tab, setTab] = useState("treemap");
   // A real scan's result is global (`useScanStore`) and can already
   // exist when this page first mounts (e.g. navigating back after

@@ -47,7 +47,7 @@ export function DiskAnalysisPage() {
   const [selectedVolume, setSelectedVolume] = useState<StorageVolume | null>(null);
   // Follows the active/last scan, so navigating away mid-scan and back
   // doesn't reset this to the default while a different path is scanning.
-  const [location, setLocation] = useState(() => useScanStore.getState().path ?? "D:\\Data");
+  const [location, setLocation] = useState(() => useScanStore.getState().path ?? "");
   const [tab, setTab] = useState("treemap");
   const [quickFilter, setQuickFilter] = useState<QuickFilterId>("all");
   // A real scan's result is global (`useScanStore`) and can already

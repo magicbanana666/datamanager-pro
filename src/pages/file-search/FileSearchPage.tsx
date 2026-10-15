@@ -56,7 +56,7 @@ function parseMb(value: string): number | null {
 export function FileSearchPage() {
   const run = useSearchStore();
   const [location, setLocation] = useState(() => useSearchStore.getState().args?.[0] ?? "");
-  const [term, setTerm] = useState("");
+  const [term, setTerm] = useState(() => useSearchStore.getState().args?.[1].query ?? "");
   const [options, setOptions] = useState({
     fileName: true,
     fileContent: false,

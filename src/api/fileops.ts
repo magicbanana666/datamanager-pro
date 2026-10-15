@@ -17,3 +17,7 @@ export function deleteFiles(paths: string[], useRecycleBin = true): Promise<Dele
 export function saveTextFile(path: string, contents: string): Promise<void> {
   return invoke("save_text_file", { path, contents });
 }
+
+export function readProjectFile(path: string): Promise<string> {
+  return invoke("read_project_file", { path });
+}

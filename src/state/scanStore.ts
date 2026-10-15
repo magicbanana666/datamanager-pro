@@ -30,6 +30,8 @@ interface ScanState {
   error: AppError | null;
 
   start: (path: string, options: ScanOptions) => Promise<void>;
+  /** Sets the location without scanning (opening a project). */
+  setPath: (path: string) => void;
   cancel: () => Promise<void>;
   reset: () => void;
   /** Resolves to `node` with its `children` populated, fetching them
@@ -90,6 +92,10 @@ function createScanStore() {
             set({ status: "error", error: toAppError(err) });
           }
         }
+      },
+
+      setPath: (path) => {
+        if (get().status !== "scanning") set({ path });
       },
 
       cancel: async () => {

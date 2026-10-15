@@ -6,7 +6,9 @@ import { StatusBar } from "@/components/status-bar/StatusBar";
 import { ToastHost } from "@/components/toast/ToastHost";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { HelpDialog } from "@/components/dialogs/HelpDialog";
-import { PlaceholderDialog } from "@/components/dialogs/PlaceholderDialog";
+import { NewScanDialog } from "@/components/dialogs/NewScanDialog";
+import { useUiStore } from "@/state/uiStore";
+import { getAppVersion } from "@/api/backend";
 import { StartupDialogs } from "@/components/dialogs/StartupDialogs";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/state/settingsStore";
@@ -17,6 +19,7 @@ export function AppShell() {
   const density = useSettingsStore((s) => s.settings.appearance.density);
   const accent = useSettingsStore((s) => s.settings.appearance.accent);
   const location = useLocation();
+  const pageEpoch = useUiStore((s) => s.pageEpoch);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-density", density);
@@ -31,6 +34,9 @@ export function AppShell() {
   useEffect(() => {
     void useSchedulerStore.getState().init();
     startActivityTracking();
+    getAppVersion()
+      .then((v) => useUiStore.getState().setAppVersion(v.version))
+      .catch(() => {});
   }, []);
 
   return (
@@ -39,7 +45,7 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="min-w-0 flex-1 overflow-y-auto bg-canvas">
-          <ErrorBoundary resetKey={location.pathname}>
+          <ErrorBoundary key={pageEpoch} resetKey={location.pathname}>
             <Outlet />
           </ErrorBoundary>
         </main>
@@ -49,7 +55,7 @@ export function AppShell() {
       <ToastHost />
       <SettingsDialog />
       <HelpDialog />
-      <PlaceholderDialog />
+      <NewScanDialog />
       <StartupDialogs />
     </div>
   );

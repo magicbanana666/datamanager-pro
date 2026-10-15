@@ -25,6 +25,8 @@ export interface JobState<TResult, TArgs extends unknown[]> {
   error: AppError | null;
 
   start: (...args: TArgs) => Promise<void>;
+  /** Sets what the next run starts with, without running (opening a project). */
+  setArgs: (args: TArgs) => void;
   cancel: () => Promise<void>;
 }
 
@@ -92,6 +94,10 @@ export function createJobStore<TResult extends { scanId: string }, TArgs extends
             toast.danger(error.message);
           }
         }
+      },
+
+      setArgs: (args) => {
+        if (get().status !== "running") set({ args });
       },
 
       cancel: async () => {

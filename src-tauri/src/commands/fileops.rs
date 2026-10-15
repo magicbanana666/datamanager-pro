@@ -71,6 +71,23 @@ pub async fn save_text_file(path: String, contents: String) -> Result<(), AppErr
     .await
 }
 
+/// Reads a project file (`.dmproj`) the user picked in a native open dialog.
+#[tauri::command]
+pub async fn read_project_file(path: String) -> Result<String, AppError> {
+    blocking(move || {
+        let p = Path::new(&path);
+        if !p.extension().is_some_and(|e| e.eq_ignore_ascii_case("dmproj")) {
+            return Err(AppError::invalid_path(path.clone(), "Choose a DataManager Pro project (.dmproj)."));
+        }
+        let meta = std::fs::metadata(p).map_err(|_| AppError::path_not_found(path.clone()))?;
+        if meta.len() > 5 * 1024 * 1024 {
+            return Err(AppError::new(AppErrorCode::InvalidInput, "That file is too large to be a project."));
+        }
+        std::fs::read_to_string(p).map_err(|e| AppError::new(AppErrorCode::IoError, e.to_string()).with_path(path.clone()))
+    })
+    .await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

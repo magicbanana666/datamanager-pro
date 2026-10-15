@@ -21,7 +21,7 @@ mod utils;
 
 use commands::comparison::{cancel_comparison, start_comparison};
 use commands::duplicates::{cancel_duplicate_scan, start_duplicate_scan};
-use commands::fileops::{delete_files, save_text_file};
+use commands::fileops::{delete_files, read_project_file, save_text_file};
 use commands::network::{
     get_access_rights, get_share_connection, list_server_sessions, list_server_shares,
     measure_read_speed,
@@ -111,6 +111,7 @@ pub fn run() {
             open_folder,
             delete_files,
             save_text_file,
+            read_project_file,
             get_share_connection,
             list_server_shares,
             list_server_sessions,

@@ -80,6 +80,8 @@ export interface TransferStoreState {
   setPaused: (paused: boolean) => Promise<void>;
   cancel: () => Promise<void>;
   setAfterCompletion: (patch: Partial<AfterCompletion>) => void;
+  /** Sets the form's request without running it (opening a project). */
+  setRequest: (request: TransferRequest) => void;
   appendLog: (text: string) => void;
 }
 
@@ -267,6 +269,9 @@ function createTransferStore(label: string) {
         await cancelTransfer(jobId).catch(() => {});
       },
 
+      setRequest: (request) => {
+        if (!["running", "analyzing"].includes(get().status)) set({ request });
+      },
       setAfterCompletion: (patch) => set((s) => ({ afterCompletion: { ...s.afterCompletion, ...patch } })),
       appendLog: (text) => appendLog([text]),
     };
