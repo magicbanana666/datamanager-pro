@@ -11,6 +11,7 @@ import { StartupDialogs } from "@/components/dialogs/StartupDialogs";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/state/settingsStore";
 import { useSchedulerStore } from "@/state/schedulerStore";
+import { startActivityTracking } from "@/state/activityStore";
 
 export function AppShell() {
   const density = useSettingsStore((s) => s.settings.appearance.density);
@@ -24,6 +25,7 @@ export function AppShell() {
   // here makes its finished runs toast everywhere.
   useEffect(() => {
     void useSchedulerStore.getState().init();
+    startActivityTracking();
   }, []);
 
   return (
