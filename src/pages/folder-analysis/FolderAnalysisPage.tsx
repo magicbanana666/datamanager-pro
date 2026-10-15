@@ -8,7 +8,6 @@ import { LocationPicker } from "@/components/controls/LocationPicker";
 import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
-import { DemoBadge } from "@/components/controls/DemoBadge";
 import { PathBreadcrumb } from "@/components/filesystem/PathBreadcrumb";
 import { DirectoryTree } from "@/components/filesystem/DirectoryTree";
 import { ProgressBar } from "@/components/charts/ProgressBar";
@@ -18,11 +17,7 @@ import { Treemap } from "@/components/treemap/Treemap";
 import { Breadcrumb } from "@/components/treemap/Breadcrumb";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { FolderDetailsCard } from "@/components/cards/FolderDetailsCard";
-import { projectsFolderTree } from "@/mock/folderTree";
-import { folderFileTypeStats, folderLargestFiles, folderSizeDistribution } from "@/mock/fileTypes";
-import { diskTimeline } from "@/mock/analysisExtra";
-import { duplicateGroups } from "@/mock/duplicates";
-import { flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
+import { EMPTY_SCAN_ROOT, flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
 import { topChildrenWithOthers } from "@/utils/scanAnalysis";
 import { useScanAnalysis } from "@/hooks/useScanAnalysis";
 import type { FsNode } from "@/models/common";
@@ -56,14 +51,14 @@ export function FolderAnalysisPage() {
   // exist when this page first mounts (e.g. navigating back after
   // scanning) - the lazy initializer reads the store directly
   // (`.getState()`, not the hook) so the very first render starts on
-  // the real root instead of briefly showing mock data isReal already
-  // claims is real. See the render-time sync below for the case where
-  // a scan completes *while* this page is already mounted.
+  // the real root instead of briefly showing the empty pre-scan root.
+  // See the render-time sync below for the case where a scan completes
+  // *while* this page is already mounted.
   const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [
-    useScanStore.getState().result?.root ?? projectsFolderTree,
+    useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT,
   ]);
   const [selectedNode, setSelectedNode] = useState<FsNode | null>(() => {
-    const root = useScanStore.getState().result?.root ?? projectsFolderTree;
+    const root = useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT;
     return root.children?.[0] ?? null;
   });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -105,9 +100,8 @@ export function FolderAnalysisPage() {
 
   // True once a real scan has completed - the treemap/table already
   // work off `currentNode` generically, so the only thing this gates
-  // is which dataset backs the analytical tabs/cards below and
-  // whether their `DemoBadge` shows. Before any scan, this stays
-  // false and everything renders exactly as it did pre-Phase-4.
+  // is whether the analysis comes from the backend. Before any scan
+  // the page shows the empty root's empty states.
   const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
@@ -140,25 +134,15 @@ export function FolderAnalysisPage() {
   // subfolder re-scopes File Types/Top Files/Top Folders/Timeline to
   // it. Only recomputed on navigation.
   const analysis = useScanAnalysis(currentNode, isReal ? realScan.scanId : null);
-  const topFilesData = isReal ? analysis.topFiles : folderLargestFiles;
-  // Pre-scan fallback matches this tab's original (already tree-
-  // derived, never a fixed mock array) behavior exactly: direct
-  // children only, sorted by size. Once real, this upgrades to a
-  // true recursive top-folders-anywhere-in-scope list.
-  const topFoldersData = isReal
-    ? analysis.topFolders
-    : [...(currentNode.children ?? [])]
-        .sort((a, b) => b.size - a.size)
-        .map((c) => ({ path: c.path, size: c.size }));
-  const fileTypeStats = isReal ? analysis.categoryStats : folderFileTypeStats;
-  const timelineData = isReal ? analysis.timeline : diskTimeline;
-  const sizeDistribution = isReal
-    ? topChildrenWithOthers(currentNode.children ?? [], 3)
-    : folderSizeDistribution;
+  const topFilesData = analysis.topFiles;
+  const topFoldersData = analysis.topFolders;
+  const fileTypeStats = analysis.categoryStats;
+  const timelineData = analysis.timeline;
+  const sizeDistribution = topChildrenWithOthers(currentNode.children ?? [], 3);
 
   // A real scan's tree arrives depth-truncated, so a folder may need
   // its children fetched first (see `needsChildren`) - a no-op for
-  // mock data and already-loaded folders.
+  // the empty pre-scan root and already-loaded folders.
   function drillInto(node: FsNode) {
     realScan
       .loadChildren(node)
@@ -337,7 +321,6 @@ export function FolderAnalysisPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
-        {(!isReal || (tab === "duplicates" && !dupResult)) && <DemoBadge />}
       </div>
 
       {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx -
@@ -441,20 +424,7 @@ export function FolderAnalysisPage() {
                   </>
                 )
               ) : (
-                <>
-                  <p className="text-xs text-fg-muted">Duplicate files detected within this folder (sample):</p>
-                  {duplicateGroups.slice(0, 3).map((g) => (
-                    <div key={g.id} className="rounded-md border border-border bg-surface-alt px-3 py-2">
-                      <div className="flex items-center justify-between text-[12.5px] font-medium text-fg">
-                        <span>{g.label}</span>
-                        <span className="text-fg-muted">{g.files.length} copies · {formatBytes(g.size)}</span>
-                      </div>
-                    </div>
-                  ))}
-                  <Button className="self-start" onClick={() => navigate("/duplicate-finder")}>
-                    Open in Duplicate Finder
-                  </Button>
-                </>
+                <p className="text-xs text-fg-subtle">Scan a folder first, then find the duplicates in it here.</p>
               )}
             </div>
           )}
@@ -476,10 +446,10 @@ export function FolderAnalysisPage() {
             />
           </Card>
           <FolderDetailsCard node={selectedNode ?? currentNode} />
-          <Card title="Size Distribution" action={!isReal && <DemoBadge />}>
+          <Card title="Size Distribution">
             <DonutChart data={sizeDistribution} centerLabel="Distribution" centerValue={formatBytes(currentNode.size)} size={120} />
           </Card>
-          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3" action={!isReal && <DemoBadge />}>
+          <Card title="File Types (in selected folder)" bodyClassName="flex flex-col gap-1.5 p-3">
             {fileTypeStats.map((s) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="text-fg-muted">{s.label}</span>
@@ -487,7 +457,7 @@ export function FolderAnalysisPage() {
               </div>
             ))}
           </Card>
-          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3" action={!isReal && <DemoBadge />}>
+          <Card title="Top 10 Largest Files" bodyClassName="flex flex-col gap-1 p-3">
             {topFilesData.slice(0, 10).map((f, i) => (
               <div key={f.name + i} className="flex items-center justify-between gap-2 text-[12px]">
                 <span className="min-w-0 flex-1 truncate text-fg-muted">
@@ -500,7 +470,7 @@ export function FolderAnalysisPage() {
         </div>
       </div>
 
-      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px] flex-none" action={!isReal && <DemoBadge />}>
+      <Card title="Files & Folders" padded={false} bodyClassName="h-[220px] flex-none">
         <DataTable
           columns={columns}
           rows={visibleRows.map((r) => r.node)}

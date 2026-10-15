@@ -10,7 +10,6 @@ import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
 import { Badge } from "@/components/controls/Badge";
-import { DemoBadge } from "@/components/controls/DemoBadge";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { BarChartPanel } from "@/components/charts/BarChartPanel";
 import { ProgressBar } from "@/components/charts/ProgressBar";
@@ -18,7 +17,6 @@ import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { HighlightText } from "@/components/controls/HighlightText";
 import { getTextPreview, openPath } from "@/api/search";
 import { toAppError } from "@/api/backend";
-import { searchResults } from "@/mock/search";
 import { Dialog } from "@/components/dialogs/Dialog";
 import { useSavedSearchStore, type SavedSearch } from "@/state/savedSearchStore";
 import { FILE_TYPE_CATEGORIES } from "@/models/common";
@@ -57,7 +55,7 @@ function parseMb(value: string): number | null {
 
 export function FileSearchPage() {
   const run = useSearchStore();
-  const [location, setLocation] = useState("D:\\Data\\Projects");
+  const [location, setLocation] = useState(() => useSearchStore.getState().args?.[0] ?? "");
   const [term, setTerm] = useState("");
   const [options, setOptions] = useState({
     fileName: true,
@@ -108,11 +106,11 @@ export function FileSearchPage() {
 
   const isReal = run.status === "completed" && !!run.result;
   const running = run.status === "running";
-  const rows = useMemo(() => (isReal && run.result ? toRows(run.result.hits) : searchResults), [isReal, run.result]);
+  const rows = useMemo(() => (isReal && run.result ? toRows(run.result.hits) : []), [isReal, run.result]);
   const totalHits = isReal && run.result ? run.result.totalHits : rows.length;
   // Highlighting only makes sense for a plain-text query - a regex or
   // wildcard pattern isn't the literal text to mark.
-  const highlightTerm = options.regex || /[*?]/.test(term) ? "" : (run.result ? term : "report");
+  const highlightTerm = options.regex || /[*?]/.test(term) ? "" : (run.result ? term : "");
 
   const categoryStats = useMemo(() => hitCategoryStats(rows), [rows]);
   const folders = useMemo(() => hitFolders(rows), [rows]);
@@ -341,7 +339,6 @@ export function FileSearchPage() {
         <Card padded={false} bodyClassName="flex flex-col gap-2 p-3 min-h-0" className="min-h-0">
           <div className="flex items-center justify-between gap-3">
             <Tabs tabs={resultTabs} active={resultTab} onChange={setResultTab} className="min-w-0 flex-1" />
-            {!isReal && <DemoBadge label="Demo Results" />}
             {isReal && run.result && run.result.totalHits > rows.length && (
               <span className="shrink-0 text-[11px] text-fg-subtle">First {formatNumber(rows.length)} shown</span>
             )}
@@ -357,7 +354,9 @@ export function FileSearchPage() {
               emptyMessage={
                 running
                   ? "Searching..."
-                  : `No matches among ${formatNumber(run.result?.filesSearched ?? 0)} files.`
+                  : run.result
+                    ? `No matches among ${formatNumber(run.result.filesSearched)} files.`
+                    : "Choose a location and search for a name, pattern or text."
               }
               className="flex-1"
             />

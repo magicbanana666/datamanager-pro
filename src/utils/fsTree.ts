@@ -38,3 +38,19 @@ export function flattenVisible(root: FsNode, expandedIds: Set<string>, depth = 0
   }
   return rows;
 }
+
+/** What the analysis pages show before their first scan: an empty
+ * folder, so every tab renders its empty state. */
+export const EMPTY_SCAN_ROOT: FsNode = {
+  id: "no-scan",
+  name: "No scan yet",
+  path: "",
+  kind: "folder",
+  size: 0,
+  allocated: 0,
+  fileCount: 0,
+  folderCount: 0,
+  percentOfParent: 100,
+  lastModified: null,
+  children: [],
+};

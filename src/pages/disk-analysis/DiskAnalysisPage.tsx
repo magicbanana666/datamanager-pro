@@ -7,7 +7,6 @@ import { LocationPicker } from "@/components/controls/LocationPicker";
 import { Button } from "@/components/controls/Button";
 import { Checkbox } from "@/components/controls/Checkbox";
 import { Tabs } from "@/components/controls/Tabs";
-import { DemoBadge } from "@/components/controls/DemoBadge";
 import { VolumeSelector } from "@/components/filesystem/VolumeSelector";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
@@ -16,11 +15,9 @@ import { Treemap } from "@/components/treemap/Treemap";
 import { Breadcrumb } from "@/components/treemap/Breadcrumb";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
 import { FolderDetailsCard } from "@/components/cards/FolderDetailsCard";
-import { diskTree } from "@/mock/folderTree";
-import { diskFileTypeStats, diskLargestFiles, diskTopFolders } from "@/mock/fileTypes";
-import { diskExtensions, diskOwners, diskTimeline } from "@/mock/analysisExtra";
+import { OwnersTab } from "@/components/analysis/OwnersTab";
 import { QUICK_FILTERS, filterChildren, withChildren, type QuickFilterId } from "@/utils/fsFilters";
-import { flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
+import { EMPTY_SCAN_ROOT, flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
 import { useScanAnalysis } from "@/hooks/useScanAnalysis";
 import type { FsNode } from "@/models/common";
 import type { StorageVolume } from "@/models/backend";
@@ -57,12 +54,11 @@ export function DiskAnalysisPage() {
   // exist when this page first mounts (e.g. navigating back after
   // scanning) - the lazy initializer reads the store directly
   // (`.getState()`, not the hook) so the very first render starts on
-  // the real root instead of briefly showing mock data isReal already
-  // claims is real. See the render-time sync below for the case where
+  // the real root instead of briefly showing the empty pre-scan root. See the render-time sync below for the case where
   // a scan completes *while* this page is already mounted.
-  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [useScanStore.getState().result?.root ?? diskTree]);
+  const [breadcrumb, setBreadcrumb] = useState<FsNode[]>(() => [useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT]);
   const [selectedNode, setSelectedNode] = useState<FsNode | null>(() => {
-    const root = useScanStore.getState().result?.root ?? diskTree;
+    const root = useScanStore.getState().result?.root ?? EMPTY_SCAN_ROOT;
     return root.children?.[0] ?? null;
   });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -113,9 +109,8 @@ export function DiskAnalysisPage() {
 
   // True once a real scan has completed - the treemap/table already
   // work off `currentNode` generically, so the only thing this gates
-  // is which dataset backs the analytical tabs/cards below and
-  // whether their `DemoBadge` shows. Before any scan, this stays
-  // false and everything renders exactly as it did pre-Phase-4.
+  // is whether the analysis comes from the backend. Before any scan
+  // the page shows the empty root's empty states.
   const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
@@ -134,15 +129,15 @@ export function DiskAnalysisPage() {
   // Files/Top Folders/Timeline/Extensions to it, same as a real
   // WizTree/TreeSize-style tool. Only recomputed on navigation.
   const analysis = useScanAnalysis(currentNode, isReal ? realScan.scanId : null);
-  const categoryStats = isReal ? analysis.categoryStats : diskFileTypeStats;
-  const topFilesData = isReal ? analysis.topFiles : diskLargestFiles;
-  const topFoldersData = isReal ? analysis.topFolders : diskTopFolders;
-  const extensionData = isReal ? analysis.extensionStats : diskExtensions;
-  const timelineData = isReal ? analysis.timeline : diskTimeline;
+  const categoryStats = analysis.categoryStats;
+  const topFilesData = analysis.topFiles;
+  const topFoldersData = analysis.topFolders;
+  const extensionData = analysis.extensionStats;
+  const timelineData = analysis.timeline;
 
   // A real scan's tree arrives depth-truncated, so a folder may need
   // its children fetched first (see `needsChildren`) - a no-op for
-  // mock data and already-loaded folders.
+  // the empty pre-scan root and already-loaded folders.
   function drillInto(node: FsNode) {
     realScan
       .loadChildren(node)
@@ -315,7 +310,6 @@ export function DiskAnalysisPage() {
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
         {/* "Users" has no real backend (no owner lookup - see PHASE2.md) so it stays badged regardless. */}
-        {(!isReal || tab === "users") && <DemoBadge />}
       </div>
 
       {/* auto-rows-fr: keeps this grid's one implicit row stretched to the
@@ -412,34 +406,11 @@ export function DiskAnalysisPage() {
               </table>
             </div>
           )}
-          {tab === "users" && (
-            <div className="overflow-y-auto">
-              <table className="w-full text-[12.5px]">
-                <thead>
-                  <tr className="border-b border-border text-left text-[11px] font-semibold text-fg-muted">
-                    <th className="px-3 py-2">Owner</th>
-                    <th className="px-3 py-2 text-right">Files</th>
-                    <th className="px-3 py-2 text-right">Size</th>
-                    <th className="px-3 py-2 text-right">%</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {diskOwners.map((o) => (
-                    <tr key={o.user} className="border-b border-border/60">
-                      <td className="px-3 py-2">{o.user}</td>
-                      <td className="px-3 py-2 text-right text-fg-muted">{formatNumber(o.files)}</td>
-                      <td className="px-3 py-2 text-right text-fg-muted">{formatBytes(o.size)}</td>
-                      <td className="px-3 py-2 text-right text-fg-muted">{formatPercent(o.percent)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {tab === "users" && <OwnersTab scanId={isReal ? realScan.scanId : null} node={currentNode} />}
         </Card>
 
         <div className="flex min-w-0 flex-col gap-3 overflow-y-auto">
-          <Card title="Drive Usage" action={!isReal && <DemoBadge />}>
+          <Card title="Drive Usage">
             <DonutChart data={categoryStats} centerLabel="Total Size" centerValue={formatBytes(currentNode.size)} size={130} />
           </Card>
           <Card title="Drive Information">
@@ -467,7 +438,7 @@ export function DiskAnalysisPage() {
               </p>
             )}
           </Card>
-          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3" action={!isReal && <DemoBadge />}>
+          <Card title="Top File Types" bodyClassName="flex flex-col gap-1.5 p-3">
             {categoryStats.slice(0, 5).map((s, i) => (
               <div key={s.label} className="flex items-center justify-between text-[12px]">
                 <span className="flex items-center gap-1.5 text-fg-muted">
@@ -491,7 +462,6 @@ export function DiskAnalysisPage() {
         bodyClassName="h-[230px] flex-none"
         action={
           <div className="flex items-center gap-2">
-            {!isReal && <DemoBadge />}
             <SlidersHorizontal size={13} className="text-fg-subtle" />
           </div>
         }

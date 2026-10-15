@@ -30,7 +30,8 @@ use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
 use commands::scan::{
-    analyze_subtree, cancel_scan, get_subtree, start_scan, ScanRegistry, ScanTreeCache,
+    analyze_owners, analyze_subtree, cancel_scan, get_subtree, start_scan, ScanRegistry,
+    ScanTreeCache,
 };
 use commands::search::{cancel_file_search, get_text_preview, open_path, start_file_search};
 use commands::storage::list_storage_volumes;
@@ -89,6 +90,7 @@ pub fn run() {
             cancel_scan,
             get_subtree,
             analyze_subtree,
+            analyze_owners,
             start_duplicate_scan,
             cancel_duplicate_scan,
             start_comparison,

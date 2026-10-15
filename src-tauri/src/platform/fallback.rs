@@ -77,3 +77,13 @@ pub fn recycle(_path: &Path) -> Result<(), String> {
 pub fn free_space_bytes(_path: &Path) -> Option<u64> {
     None
 }
+
+pub mod network {
+    pub fn owner_sid(_path: &std::path::Path) -> Option<Vec<u8>> {
+        None
+    }
+
+    pub fn sid_account_name(_sid: &[u8]) -> String {
+        String::new()
+    }
+}

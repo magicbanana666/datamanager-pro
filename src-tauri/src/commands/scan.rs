@@ -303,3 +303,66 @@ async fn run_and_report(
         }
     }
 }
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerStat {
+    pub owner: String,
+    pub files: u64,
+    pub size: u64,
+    pub percent: f64,
+}
+
+/// Size and file count per file owner (NTFS) under `path` in a cached
+/// scan - the Users/Owners tab. Reads each file's owner on the fly
+/// (in parallel); unreadable ones count as "(unknown)".
+#[tauri::command]
+pub async fn analyze_owners(app: AppHandle, scan_id: String, path: String) -> Result<Vec<OwnerStat>, AppError> {
+    use rayon::prelude::*;
+    let root = cached_tree(&app, &scan_id)?;
+    super::blocking(move || {
+        let node = lookup(&root, &path)?;
+        let mut files: Vec<(&str, u64)> = Vec::new();
+        let mut stack = vec![node];
+        while let Some(n) = stack.pop() {
+            match n.kind {
+                crate::models::scan::NodeKind::File => files.push((n.path.as_str(), n.size)),
+                crate::models::scan::NodeKind::Folder => stack.extend(n.children.as_deref().unwrap_or(&[])),
+            }
+        }
+        let totals = files
+            .par_iter()
+            .fold(HashMap::<Vec<u8>, (u64, u64)>::new, |mut acc, &(p, size)| {
+                let sid = crate::platform::current::network::owner_sid(std::path::Path::new(p)).unwrap_or_default();
+                let entry = acc.entry(sid).or_default();
+                entry.0 += 1;
+                entry.1 += size;
+                acc
+            })
+            .reduce(HashMap::new, |mut a, b| {
+                for (k, (f, s)) in b {
+                    let e = a.entry(k).or_default();
+                    e.0 += f;
+                    e.1 += s;
+                }
+                a
+            });
+        let total: u64 = totals.values().map(|v| v.1).sum();
+        let mut stats: Vec<OwnerStat> = totals
+            .into_iter()
+            .map(|(sid, (files, size))| OwnerStat {
+                owner: if sid.is_empty() {
+                    "(unknown)".into()
+                } else {
+                    crate::platform::current::network::sid_account_name(&sid)
+                },
+                files,
+                size,
+                percent: if total > 0 { size as f64 / total as f64 * 100.0 } else { 0.0 },
+            })
+            .collect();
+        stats.sort_by_key(|s| std::cmp::Reverse(s.size));
+        Ok(stats)
+    })
+    .await
+}

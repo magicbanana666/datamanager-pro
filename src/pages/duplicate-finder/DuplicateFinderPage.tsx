@@ -9,10 +9,8 @@ import { Select } from "@/components/controls/Select";
 import { TextInput } from "@/components/controls/TextInput";
 import { Button } from "@/components/controls/Button";
 import { Tabs } from "@/components/controls/Tabs";
-import { DemoBadge } from "@/components/controls/DemoBadge";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DonutChart } from "@/components/charts/DonutChart";
-import { duplicateFileTypeStats, duplicateGroups as seedGroups } from "@/mock/duplicates";
 import type { DuplicateCriteriaId, DuplicateFileEntry, DuplicateGroup, HashJobProgress } from "@/models/duplicates";
 import { confirmAction, pickFolder, pickSaveFile } from "@/api/dialog";
 import { deleteFiles, saveTextFile } from "@/api/fileops";
@@ -82,7 +80,7 @@ export function DuplicateFinderPage() {
   // arrives - during render, the same "adjust state when a prop
   // changes" pattern DiskAnalysisPage uses.
   const [groups, setGroups] = useState<DuplicateGroup[]>(() =>
-    run.result ? toUiGroups(run.result, keepRule) : seedGroups,
+    run.result ? toUiGroups(run.result, keepRule) : [],
   );
   const [lastSeenResult, setLastSeenResult] = useState(run.result);
   if (run.result !== lastSeenResult) {
@@ -108,7 +106,7 @@ export function DuplicateFinderPage() {
     };
   }, [groups, isReal, run.result]);
 
-  const categoryStats = useMemo(() => (isReal ? duplicateCategoryStats(groups) : duplicateFileTypeStats), [groups, isReal]);
+  const categoryStats = useMemo(() => duplicateCategoryStats(groups), [groups]);
   const folderStats = useMemo(() => duplicateFolderStats(groups), [groups]);
 
   async function addLocation() {
@@ -174,7 +172,7 @@ export function DuplicateFinderPage() {
   /** Refuses a selection that would leave a group without any copy. */
   function checkSelection(): string[] | null {
     if (!isReal) {
-      toast.demoNoFilesModified();
+      toast.warning("Run a duplicate scan first.");
       return null;
     }
     if (selectedFiles.length === 0) {
@@ -363,7 +361,6 @@ export function DuplicateFinderPage() {
 
       <div className="flex items-center gap-2">
         <Tabs tabs={TABS} active={tab} onChange={setTab} />
-        {!isReal && <DemoBadge />}
       </div>
 
       <div className="grid grid-cols-4 gap-3">
@@ -388,7 +385,9 @@ export function DuplicateFinderPage() {
           {tab === "results" ? (
             groups.length === 0 ? (
               <div className="flex h-full items-center justify-center text-xs text-fg-subtle">
-                No duplicates found among {formatNumber(run.result?.filesCompared ?? 0)} files.
+                {run.result
+                  ? `No duplicates found among ${formatNumber(run.result.filesCompared)} files.`
+                  : "Add locations and press Start Scan to find duplicate files."}
               </div>
             ) : (
               <table className="w-full text-[12.5px]">

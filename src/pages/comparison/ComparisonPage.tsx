@@ -19,21 +19,10 @@ import { Checkbox } from "@/components/controls/Checkbox";
 import { Select } from "@/components/controls/Select";
 import { Tabs } from "@/components/controls/Tabs";
 import { Badge } from "@/components/controls/Badge";
-import { DemoBadge } from "@/components/controls/DemoBadge";
 import { DonutChart } from "@/components/charts/DonutChart";
 import { BarChartPanel } from "@/components/charts/BarChartPanel";
 import { ProgressBar } from "@/components/charts/ProgressBar";
 import { DataTable, type DataTableColumn } from "@/components/tables/DataTable";
-import {
-  comparisonFileTypesA,
-  comparisonFileTypesB,
-  comparisonRows,
-  comparisonSummaryA,
-  comparisonSummaryB,
-  comparisonTotals,
-  fileCountComparisonByType,
-  sizeComparisonByType,
-} from "@/mock/comparison";
 import { FILE_TYPE_CATEGORIES } from "@/models/common";
 import type { ComparisonMode, ComparisonRow, ComparisonStatus } from "@/models/comparison";
 import type { HashJobProgress } from "@/models/duplicates";
@@ -92,20 +81,14 @@ export function ComparisonPage() {
   const running = run.status === "running";
   const result = isReal ? run.result : null;
 
-  const allRows = useMemo(() => (result ? toUiRows(result) : comparisonRows), [result]);
-  const totals = result?.totals ?? comparisonTotals;
-  const summaryA = result
-    ? { ...result.a, lastModified: result.a.lastModified ?? "" }
-    : comparisonSummaryA;
-  const summaryB = result
-    ? { ...result.b, lastModified: result.b.lastModified ?? "" }
-    : comparisonSummaryB;
-  const fileTypesA = useMemo(() => (result ? sideCategoryStats(result.a) : comparisonFileTypesA), [result]);
-  const fileTypesB = useMemo(() => (result ? sideCategoryStats(result.b) : comparisonFileTypesB), [result]);
-  const byCategory = useMemo(
-    () => (result ? categoryComparison(result) : { bytes: sizeComparisonByType, files: fileCountComparisonByType }),
-    [result],
-  );
+  const allRows = useMemo(() => (result ? toUiRows(result) : []), [result]);
+  // Before a first comparison everything reads as zero.
+  const totals = result?.totals ?? EMPTY_TOTALS;
+  const summaryA = result ? { ...result.a, lastModified: result.a.lastModified ?? "" } : emptySummary(locationA);
+  const summaryB = result ? { ...result.b, lastModified: result.b.lastModified ?? "" } : emptySummary(locationB);
+  const fileTypesA = useMemo(() => (result ? sideCategoryStats(result.a) : []), [result]);
+  const fileTypesB = useMemo(() => (result ? sideCategoryStats(result.b) : []), [result]);
+  const byCategory = useMemo(() => (result ? categoryComparison(result) : { bytes: [], files: [] }), [result]);
 
   const tabs = [
     { id: "summary", label: "Summary" },
@@ -149,7 +132,7 @@ export function ComparisonPage() {
   /** The selected row's file on the chosen side, as (file, folder). */
   function selectedFile(): [string, string] | null {
     if (!isReal) {
-      toast.demoNoFilesModified();
+      toast.warning("Compare two locations first.");
       return null;
     }
     if (!selectedRow) {
@@ -312,12 +295,11 @@ export function ComparisonPage() {
 
       <div className="flex items-center gap-2">
         <Tabs tabs={tabs} active={tab} onChange={setTab} />
-        {!isReal && <DemoBadge label="Demo Comparison" />}
       </div>
 
       {tab === "summary" && (
         <div className="grid grid-cols-3 gap-3">
-          <Card title={`Location A — ${summaryA.location}`}>
+          <Card title={`Location A — ${summaryA.location || "not chosen"}`}>
             <DonutChart data={fileTypesA} centerLabel="Total Size" centerValue={formatBytes(summaryA.totalBytes)} size={120} />
             <div className="mt-2 text-[11.5px] text-fg-subtle">
               {formatNumber(summaryA.files)} files · {formatNumber(summaryA.folders)} folders
@@ -347,7 +329,7 @@ export function ComparisonPage() {
               </p>
             )}
           </Card>
-          <Card title={`Location B — ${summaryB.location}`}>
+          <Card title={`Location B — ${summaryB.location || "not chosen"}`}>
             <DonutChart data={fileTypesB} centerLabel="Total Size" centerValue={formatBytes(summaryB.totalBytes)} size={120} />
             <div className="mt-2 text-[11.5px] text-fg-subtle">
               {formatNumber(summaryB.files)} files · {formatNumber(summaryB.folders)} folders
@@ -511,4 +493,18 @@ export function ComparisonPage() {
 
 function fullPath(folder: string, name: string): string {
   return `${folder.replace(/\\+$/, "")}\\${name}`;
+}
+
+const EMPTY_TOTALS = {
+  identicalFiles: 0,
+  differentFiles: 0,
+  leftOnly: 0,
+  rightOnly: 0,
+  differentDataBytes: 0,
+  leftOnlyBytes: 0,
+  rightOnlyBytes: 0,
+};
+
+function emptySummary(location: string) {
+  return { location, totalBytes: 0, files: 0, folders: 0, lastModified: "" };
 }

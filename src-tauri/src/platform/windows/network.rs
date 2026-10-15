@@ -235,3 +235,37 @@ pub fn read_dacl(path: &Path) -> Result<Vec<RawAce>, String> {
     Ok(entries)
 }
 
+
+/// The owner SID of `path`, as raw bytes (comparable, hashable).
+pub fn owner_sid(path: &Path) -> Option<Vec<u8>> {
+    use windows::Win32::Security::{GetLengthSid, OWNER_SECURITY_INFORMATION};
+    let wide = to_wide(&path.to_string_lossy());
+    let mut owner = PSID::default();
+    let mut descriptor = PSECURITY_DESCRIPTOR::default();
+    let status = unsafe {
+        GetNamedSecurityInfoW(
+            PCWSTR(wide.as_ptr()),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            Some(&mut owner),
+            None,
+            None,
+            None,
+            &mut descriptor,
+        )
+    };
+    if status != ERROR_SUCCESS {
+        return None;
+    }
+    let sid = (!owner.is_invalid()).then(|| {
+        let len = unsafe { GetLengthSid(owner) } as usize;
+        unsafe { std::slice::from_raw_parts(owner.0 as *const u8, len) }.to_vec()
+    });
+    unsafe { LocalFree(Some(HLOCAL(descriptor.0))) };
+    sid
+}
+
+/// `DOMAIN\name` for a SID from [`owner_sid`].
+pub fn sid_account_name(sid: &[u8]) -> String {
+    account_name(PSID(sid.as_ptr() as *mut _)).0
+}
