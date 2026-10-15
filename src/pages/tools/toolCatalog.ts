@@ -64,7 +64,7 @@ export const toolCategories: ToolCategoryGroup[] = [
     tools: [
       { id: "network-scanner", name: "Network Scanner", description: "Scan network devices and shared folders.", icon: Waypoints, accentColorIndex: 0, action: { kind: "route", to: "/network-analysis" } },
       { id: "ping-tool", name: "Ping Tool", description: "Test network connectivity.", icon: Radio, accentColorIndex: 0, action: { kind: "dialog", dialog: "ping" } },
-      { id: "ip-port-scanner", name: "IP / Port Scanner", description: "Check open ports on a host.", icon: ScanLine, accentColorIndex: 0, action: { kind: "route", to: "/tools/ip-port-scanner" } },
+      { id: "ip-port-scanner", name: "IP / Port Scanner", description: "Demo only - simulated results, no network traffic.", icon: ScanLine, accentColorIndex: 0, action: { kind: "route", to: "/tools/ip-port-scanner" } },
       { id: "remote-share-browser", name: "Remote Share Browser", description: "Browse network shares (SMB).", icon: FolderSymlink, accentColorIndex: 5, action: { kind: "route", to: "/network-analysis" } },
       { id: "ip-lookup", name: "IP Lookup", description: "Get IP and DNS information.", icon: MapPin, accentColorIndex: 3, action: { kind: "dialog", dialog: "dns" } },
       { id: "wake-on-lan", name: "Wake-on-LAN", description: "Wake remote computers.", icon: Power, accentColorIndex: 4, action: { kind: "dialog", dialog: "wol" } },

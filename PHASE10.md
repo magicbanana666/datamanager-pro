@@ -87,3 +87,31 @@ Nothing is sent anywhere - crash reports stay on the machine.
 
 Log pruning; the full suite (`cargo test`) and the frontend checks pass.
 The installer and portable builds were produced locally.
+
+## No more sample data
+
+Everything that still showed Phase 1 sample data or did nothing is now
+real, or removed:
+
+- **Overview**: real drives (used/free), the last scan, duplicates,
+  transfers, scheduled tasks; recent scans and transfers from a small
+  persisted activity log; the real recent reports.
+- **Disk / Folder Analysis, Compare Locations, Duplicate Finder, File
+  Search**: start empty (with a hint) instead of sample results and
+  fake default paths. The **Users/Owners** tab totals size per NTFS
+  owner of the folder in view (`analyze_owners`), on request.
+- **Tools**: all 30 tools work except the IP / Port Scanner - Windows'
+  own tools, links to the app's pages, or built-in dialogs (properties,
+  hashes/checksum verification, split/join, ZIP create/extract,
+  shredder, ping, DNS lookup, Wake-on-LAN, disk health, system info,
+  script runner, log viewer).
+- **Toolbar**: New Scan starts a drive/folder/share scan; Open/Save
+  Project read and write a `.dmproj` with every page's locations and
+  options.
+- **Settings**: every setting applies (scan threads and hidden files,
+  file-operation and report defaults, accent colour, log level, launch
+  behaviour and remembered locations); settings no engine uses were
+  removed.
+- **Status bar**: the process's real memory use and the real version.
+
+The IP / Port Scanner page is the only demo left and says so at the top.
