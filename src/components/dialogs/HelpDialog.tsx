@@ -1,4 +1,5 @@
 import { BookOpen, FolderOpen, LifeBuoy, MessageSquare, Plug, PlugZap } from "lucide-react";
+import logo from "@/assets/logo-mark.png";
 import { logsFolder } from "@/api/diagnostics";
 import { openFolder } from "@/api/transfer";
 import { Dialog } from "@/components/dialogs/Dialog";
@@ -20,9 +21,12 @@ export function HelpDialog() {
       footer={<Button variant="primary" onClick={closeHelp}>Close</Button>}
     >
       <div className="flex flex-col gap-4">
-        <div>
-          <div className="text-[15px] font-semibold text-fg">DataManager Pro</div>
-          <div className="text-xs text-fg-muted">Analyze. Migrate. Manage. Your Data. — v{appVersion}</div>
+        <div className="flex items-center gap-3">
+          <img src={logo} alt="" className="h-11 w-11 shrink-0" draggable={false} />
+          <div>
+            <div className="text-[15px] font-semibold text-fg">DataManager Pro</div>
+            <div className="text-xs text-fg-muted">Analyze. Migrate. Manage. Your Data. — v{appVersion}</div>
+          </div>
         </div>
         <div className="flex flex-col gap-2 text-[13px] text-fg-muted">
           <div className="flex items-start gap-2.5">
