@@ -12,6 +12,7 @@
 **Phases 6 & 7 — Complete** (copy/move/sync engine with journal and
 resume, see [PHASE6.md](./PHASE6.md)).
 **Phase 8 — Complete** (network shares, see [PHASE8.md](./PHASE8.md)).
+**Phase 9 — Complete** (scheduler and reports, see [PHASE9.md](./PHASE9.md)).
  The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
@@ -81,11 +82,10 @@ connection status and read-speed measurement on Network Analysis. The
 IP/port scanner part was not built; that page stays a demo. See
 [PHASE8.md](./PHASE8.md).
 
-### Phase 9 — Scheduler & reporting
-A real scheduler (either an internal cron-like runner or genuine
-Windows Task Scheduler integration, clearly disclosed to the user) and
-real report generation (PDF/HTML/XLSX/CSV) replacing the "Generate
-Report" no-op in `src/pages/reports`.
+### ~~Phase 9 — Scheduler & reporting~~ ✅ Complete
+An in-app scheduler (runs while the app is open, clearly disclosed)
+that runs transfer and scan tasks, and real HTML/PDF/XLSX/CSV reports
+from the app's live results. See [PHASE9.md](./PHASE9.md).
 
 ### Phase 10 — Installer, portable build, update system & production hardening
 MSI/NSIS installer via `tauri-bundler`, a portable single-exe build,

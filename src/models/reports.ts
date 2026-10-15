@@ -1,14 +1,41 @@
+/** Mirrors `src-tauri/src/models/reports.rs` (Phase 9). */
 export type ReportCategory =
   | "Disk Analysis"
   | "Folder Analysis"
-  | "Duplicate Finder"
-  | "Data Transfer"
-  | "Sync / Incremental"
   | "Network Analysis"
-  | "Scheduler"
+  | "Duplicate Finder"
   | "Comparison"
   | "File Search"
-  | "Custom";
+  | "Data Transfer"
+  | "Sync / Incremental"
+  | "Scheduler";
+
+export type ReportFormat = "PDF" | "HTML" | "XLSX" | "CSV";
+
+export type ReportTemplate = "professional" | "compact" | "detailed";
+
+export type ReportCell = string | number | null;
+
+export type ReportSection =
+  | { kind: "keyValues"; title: string; items: { label: string; value: string }[] }
+  | { kind: "table"; title: string; columns: string[]; rows: ReportCell[][] }
+  | { kind: "bars"; title: string; items: { label: string; value: number; display: string }[] };
+
+export interface ReportDocument {
+  title: string;
+  category: ReportCategory;
+  source: string;
+  notes: string | null;
+  sections: ReportSection[];
+}
+
+export interface ReportRequest {
+  document: ReportDocument;
+  format: ReportFormat;
+  template: ReportTemplate;
+  includeCharts: boolean;
+  description: string;
+}
 
 export interface ReportRecord {
   id: string;
@@ -17,31 +44,6 @@ export interface ReportRecord {
   dateCreated: string;
   size: number;
   description: string;
-}
-
-export type ReportFormat = "PDF" | "HTML" | "XLSX" | "CSV";
-
-export interface ReportGenerationOptions {
-  reportType: string;
-  source: string;
-  format: ReportFormat;
-  includeSummary: boolean;
-  includeFileTypes: boolean;
-  includeLargest: boolean;
-  includeCharts: boolean;
-  includeDuplicates: boolean;
-  includeTransferHistory: boolean;
-  customNotes: string;
-  template: "Professional" | "Compact" | "Detailed";
-}
-
-export interface FolderSizeEntry {
   path: string;
-  size: number;
-}
-
-export interface DataGrowthPoint {
-  month: string;
-  sourceBytes: number;
-  destBytes: number;
+  format: ReportFormat;
 }

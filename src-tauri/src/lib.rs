@@ -38,6 +38,9 @@ use commands::transfer::{
     list_interrupted_transfers, open_folder, resume_interrupted_transfer, schedule_shutdown,
     set_transfer_paused, start_transfer, TransferRegistry,
 };
+use commands::reports::{
+    delete_report, export_report, generate_report, list_reports, preview_report, reports_folder,
+};
 use commands::scheduler::{
     clear_task_history, delete_scheduled_task, get_scheduler, run_task_now, save_scheduled_task,
     set_task_enabled, update_scheduler_settings, SchedulerStore,
@@ -109,6 +112,12 @@ pub fn run() {
             update_scheduler_settings,
             clear_task_history,
             run_task_now,
+            generate_report,
+            preview_report,
+            list_reports,
+            delete_report,
+            export_report,
+            reports_folder,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

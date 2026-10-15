@@ -15,6 +15,7 @@ pub mod storage;
 pub mod system;
 
 pub mod network;
+pub mod reports;
 pub mod scheduler;
 pub mod transfer;
 
