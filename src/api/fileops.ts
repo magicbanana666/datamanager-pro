@@ -21,3 +21,13 @@ export function saveTextFile(path: string, contents: string): Promise<void> {
 export function readProjectFile(path: string): Promise<string> {
   return invoke("read_project_file", { path });
 }
+
+/** Opens Explorer with the file or folder selected. */
+export function revealInExplorer(path: string): Promise<void> {
+  return invoke("reveal_in_explorer", { path });
+}
+
+/** Files or folders to the Recycle Bin (never a permanent delete). */
+export function recyclePaths(paths: string[]): Promise<DeleteOutcome> {
+  return invoke("recycle_paths", { paths });
+}

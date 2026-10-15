@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, FolderPlus, ImageIcon, ScanSearch, Trash2, X } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -61,6 +62,7 @@ function parseMb(value: string): number | null {
 }
 
 export function DuplicateFinderPage() {
+  const fsMenu = useFsContextMenu();
   // Starts from the last run's roots, so a run started elsewhere (Folder
   // Analysis' Duplicates tab) shows which folder it covers.
   const [locations, setLocations] = useState<{ path: string; checked: boolean }[]>(
@@ -424,6 +426,10 @@ export function DuplicateFinderPage() {
                           <tr
                             key={f.id}
                             onClick={() => setFocusedFile(f)}
+                            onContextMenu={(e) => {
+                              setFocusedFile(f);
+                              fsMenu.open(e, { path: f.id, kind: "file" }, (paths) => removeFiles(new Set(paths)));
+                            }}
                             className={
                               "cursor-pointer border-b border-border/40 " +
                               (focusedFile?.id === f.id ? "bg-surface-selected" : "hover:bg-surface-hover")
@@ -487,7 +493,7 @@ export function DuplicateFinderPage() {
               </thead>
               <tbody>
                 {folderStats.map((f) => (
-                  <tr key={f.path} className="border-b border-border/40">
+                  <tr key={f.path} className="border-b border-border/40 hover:bg-surface-hover" onContextMenu={(e) => fsMenu.open(e, { path: f.path, kind: "folder" })}>
                     <td className="max-w-[520px] truncate px-3 py-1.5 text-fg" title={f.path}>
                       {f.path}
                     </td>

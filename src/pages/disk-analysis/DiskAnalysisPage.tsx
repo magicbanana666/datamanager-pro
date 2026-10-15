@@ -30,6 +30,7 @@ import { useScanStore } from "@/state/scanStore";
 import { toast } from "@/state/toastStore";
 import { useUiStore } from "@/state/uiStore";
 import { chartColor } from "@/utils/colors";
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 
 const TABS = [
   { id: "treemap", label: "Treemap" },
@@ -43,6 +44,12 @@ const TABS = [
 ];
 
 export function DiskAnalysisPage() {
+  const fsMenu = useFsContextMenu();
+  // Right-click: select the item and open its file/folder menu.
+  const onItemMenu = (node: FsNode, event: React.MouseEvent) => {
+    setSelectedNode(node);
+    fsMenu.forNode(event, node);
+  };
   const { volumes, volumesLoading, volumesError, loadVolumes } = useFilesystemStore();
   const [selectedVolume, setSelectedVolume] = useState<StorageVolume | null>(null);
   // Follows the active/last scan, so navigating away mid-scan and back
@@ -328,7 +335,7 @@ export function DiskAnalysisPage() {
           {tab === "treemap" && (
             <>
               <Breadcrumb segments={breadcrumb.map((n) => ({ id: n.id, label: n.name }))} onNavigate={navigateBreadcrumb} />
-              <Treemap node={filteredCurrentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} canDrillDown={hasExpandableChildren} className="flex-1" />
+              <Treemap node={filteredCurrentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} canDrillDown={hasExpandableChildren} onNodeContextMenu={onItemMenu} className="flex-1" />
             </>
           )}
           {tab === "chart" && (
@@ -473,6 +480,7 @@ export function DiskAnalysisPage() {
           selectedId={selectedNode?.id}
           onRowClick={setSelectedNode}
           onRowDoubleClick={(n) => hasExpandableChildren(n) && drillInto(n)}
+          onRowContextMenu={onItemMenu}
           className="h-full border-0 rounded-none"
         />
       </Card>

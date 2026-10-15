@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { CheckCircle2, Copy, FolderOpen, Loader2, XCircle } from "lucide-react";
 import { Dialog } from "@/components/dialogs/Dialog";
+import { PathProperties } from "@/components/dialogs/PropertiesDialog";
 import { Button } from "@/components/controls/Button";
 import { TextInput } from "@/components/controls/TextInput";
 import { Badge } from "@/components/controls/Badge";
 import { confirmAction, pickFile, pickFolder, pickSaveFile } from "@/api/dialog";
-import { getFileMetadata, getFolderMetadata, getSystemInfo, listStorageVolumes, toAppError, validatePath } from "@/api/backend";
+import { getSystemInfo, listStorageVolumes, toAppError } from "@/api/backend";
 import { openFolder } from "@/api/transfer";
 import { logsFolder } from "@/api/diagnostics";
 import {
@@ -26,7 +27,7 @@ import {
 } from "@/api/tools";
 import type { ToolDialogId } from "@/models/tools";
 import type { StorageVolume, SystemInfo } from "@/models/backend";
-import { formatBytes, formatDate, formatNumber } from "@/utils/format";
+import { formatBytes, formatNumber } from "@/utils/format";
 import { toast } from "@/state/toastStore";
 
 const TITLES: Record<ToolDialogId, string> = {
@@ -100,66 +101,6 @@ function Status({ busy, error, children }: { busy: boolean; error?: string; chil
   if (busy) return <div className="flex items-center gap-2 text-[12px] text-fg-muted"><Loader2 size={14} className="animate-spin" /> Working...</div>;
   if (error) return <p className="text-[12px] text-danger">{error}</p>;
   return <>{children}</>;
-}
-
-function PropertiesTool() {
-  const [path, setPath] = useState("");
-  const r = useRun<{ rows: [string, string][] }>();
-  const load = (p: string) =>
-    r.run(async () => {
-      const v = await validatePath(p);
-      if (!v.exists) throw new Error("That path doesn't exist.");
-      if (v.isDirectory) {
-        const m = await getFolderMetadata(v.normalizedPath ?? p);
-        return {
-          rows: [
-            ["Path", m.path],
-            ["Type", "Folder"],
-            ["Contains", `${formatNumber(m.directFileCount)} files (${formatBytes(m.directFileBytes)}), ${formatNumber(m.directFolderCount)} folders (direct)`],
-            ["Created", formatDate(m.created)],
-            ["Modified", formatDate(m.modified)],
-            ["Accessed", formatDate(m.accessed)],
-            ["Attributes", m.attributes.join(", ") || "-"],
-          ],
-        };
-      }
-      const m = await getFileMetadata(v.normalizedPath ?? p);
-      return {
-        rows: [
-          ["Path", m.path],
-          ["Type", m.extension ? `${m.extension.toUpperCase()} file` : "File"],
-          ["Size", `${formatBytes(m.sizeBytes)} (${formatNumber(m.sizeBytes)} bytes)`],
-          ["Size on disk", m.allocatedSizeBytes != null ? formatBytes(m.allocatedSizeBytes) : "-"],
-          ["Created", formatDate(m.created)],
-          ["Modified", formatDate(m.modified)],
-          ["Accessed", formatDate(m.accessed)],
-          ["Owner", m.owner ?? "-"],
-          ["Attributes", m.attributes.join(", ") || "-"],
-        ],
-      };
-    });
-  return (
-    <div className="flex flex-col gap-3">
-      <div className="flex gap-2">
-        <TextInput value={path} onChange={(e) => setPath(e.target.value)} placeholder="A file or folder" containerClassName="flex-1" onKeyDown={(e) => e.key === "Enter" && load(path)} />
-        <Button onClick={() => pickFile().then((p) => p && (setPath(p), load(p)))}>File...</Button>
-        <Button onClick={() => pickFolder().then((p) => p && (setPath(p), load(p)))}>Folder...</Button>
-        <Button variant="primary" disabled={!path.trim()} onClick={() => load(path)}>Show</Button>
-      </div>
-      <Status busy={r.busy} error={r.error}>
-        {r.result && (
-          <dl className="grid grid-cols-[110px_1fr] gap-y-1.5 text-[12.5px]">
-            {r.result.rows.map(([k, v]) => (
-              <div key={k} className="contents">
-                <dt className="text-fg-muted">{k}:</dt>
-                <dd className="break-all text-fg">{v}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-      </Status>
-    </div>
-  );
 }
 
 function HashTool({ verify }: { verify: boolean }) {
@@ -499,7 +440,7 @@ export function ToolDialog({ dialog, onClose }: { dialog: ToolDialogId | null; o
   if (!dialog) return null;
   const body = {
     explorer: <ExplorerTool onDone={onClose} />,
-    properties: <PropertiesTool />,
+    properties: <PathProperties />,
     hash: <HashTool verify={false} />,
     verify: <HashTool verify />,
     split: <SplitTool />,

@@ -28,6 +28,7 @@ import { formatBytes, formatDate, formatDuration, formatNumber, formatPercent } 
 import { useNetworkScanStore } from "@/state/scanStore";
 import { useUiStore } from "@/state/uiStore";
 import { toast } from "@/state/toastStore";
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 
 const TABS = [
   { id: "overview", label: "Overview" },
@@ -86,6 +87,12 @@ function useKeyedLoad<T>(key: string | null, load: (key: string) => Promise<T>) 
 }
 
 export function NetworkAnalysisPage() {
+  const fsMenu = useFsContextMenu();
+  // Right-click: select the item and open its file/folder menu.
+  const onItemMenu = (node: FsNode, event: React.MouseEvent) => {
+    setSelectedNode(node);
+    fsMenu.forNode(event, node);
+  };
   const scan = useNetworkScanStore();
   const [location, setLocation] = useState(() => useNetworkScanStore.getState().path ?? "");
   const [tab, setTab] = useState("overview");
@@ -381,7 +388,7 @@ export function NetworkAnalysisPage() {
             (isReal ? (
               <>
                 <Breadcrumb segments={breadcrumb.map((n) => ({ id: n.id, label: n.name }))} onNavigate={(i) => setBreadcrumb((b) => b.slice(0, i + 1))} />
-                <Treemap node={currentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} canDrillDown={hasExpandableChildren} className="flex-1" />
+                <Treemap node={currentNode} selectedId={selectedNode?.id} onSelect={setSelectedNode} onDrillDown={drillInto} canDrillDown={hasExpandableChildren} onNodeContextMenu={onItemMenu} className="flex-1" />
               </>
             ) : (
               emptyHint("Scan a network share to see its treemap.")
@@ -559,6 +566,7 @@ export function NetworkAnalysisPage() {
           selectedId={selectedNode?.id}
           onRowClick={setSelectedNode}
           onRowDoubleClick={(n) => hasExpandableChildren(n) && drillInto(n)}
+          onRowContextMenu={onItemMenu}
           emptyMessage={running ? "Scanning..." : "Scan a network share to browse its folders."}
           className="h-full border-0 rounded-none"
         />

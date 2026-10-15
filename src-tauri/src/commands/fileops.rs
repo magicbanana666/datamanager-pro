@@ -71,6 +71,52 @@ pub async fn save_text_file(path: String, contents: String) -> Result<(), AppErr
     .await
 }
 
+/// Opens Explorer with `path` selected in its folder.
+#[tauri::command]
+pub fn reveal_in_explorer(path: String) -> Result<(), AppError> {
+    if std::fs::symlink_metadata(&path).is_err() {
+        return Err(AppError::path_not_found(path));
+    }
+    // Explorer parses `/select,` itself and wants the path quoted.
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{path}\""))
+            .spawn()
+            .map(|_| ())
+            .map_err(|e| AppError::new(AppErrorCode::IoError, e.to_string()))
+    }
+    #[cfg(not(windows))]
+    Err(AppError::unsupported("Explorer is only available on Windows."))
+}
+
+/// Moves files or folders (with their contents) to the Recycle Bin - the
+/// right-click Delete. Never deletes permanently: a location without a
+/// Recycle Bin is reported instead.
+#[tauri::command]
+pub async fn recycle_paths(paths: Vec<String>) -> Result<DeleteOutcome, AppError> {
+    blocking(move || {
+        let mut outcome = DeleteOutcome { deleted: Vec::new(), errors: Vec::new() };
+        for path in paths {
+            let result = if std::fs::symlink_metadata(&path).is_err() {
+                Err("it no longer exists".to_string())
+            } else {
+                platform::current::recycle(Path::new(&path))
+            };
+            match result {
+                Ok(()) => {
+                    tracing::info!(path = %path, "moved to the Recycle Bin");
+                    outcome.deleted.push(path);
+                }
+                Err(message) => outcome.errors.push(TransferError { path, message }),
+            }
+        }
+        Ok(outcome)
+    })
+    .await
+}
+
 /// Reads a project file (`.dmproj`) the user picked in a native open dialog.
 #[tauri::command]
 pub async fn read_project_file(path: String) -> Result<String, AppError> {

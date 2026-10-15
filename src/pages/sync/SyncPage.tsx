@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { useMemo, useState } from "react";
 import { Pause, Play, ScanSearch, Square } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -45,6 +46,7 @@ const RESOLUTIONS: { value: string; label: string }[] = [
 ];
 
 export function SyncPage() {
+  const fsMenu = useFsContextMenu();
   const run = useSyncStore();
   const last = useSyncStore.getState().request;
   const [source, setSource] = useState(last?.source ?? "");
@@ -293,6 +295,12 @@ export function SyncPage() {
               columns={tab === "conflicts" ? conflictColumns : columns}
               rows={visibleRows}
               getRowId={(r) => String(r.id)}
+              onRowContextMenu={(r, e) =>
+                fsMenu.open(e, {
+                  path: ["delete-dest", "copy-back", "update-back"].includes(r.action) ? r.destPath : r.sourcePath,
+                  kind: r.isFolder ? "folder" : "file",
+                })
+              }
               className="h-full border-0 rounded-none"
               emptyMessage={
                 run.status === "analyzing"

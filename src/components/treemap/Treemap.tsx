@@ -20,6 +20,8 @@ interface TreemapProps {
    * `hasExpandableChildren` so truncated folders (fetched on demand)
    * stay drillable too. */
   canDrillDown?: (node: FsNode) => boolean;
+  /** Right-click on a tile. */
+  onNodeContextMenu?: (node: FsNode, event: React.MouseEvent) => void;
   className?: string;
 }
 
@@ -188,6 +190,7 @@ export function Treemap({
   node,
   selectedId,
   onSelect,
+  onNodeContextMenu,
   onDrillDown,
   canDrillDown = hasLoadedChildren,
   className,
@@ -225,6 +228,7 @@ export function Treemap({
             key={`${t.node.id}:${t.depth}:${t.x.toFixed(0)}:${t.y.toFixed(0)}`}
             onClick={() => onSelect?.(t.node)}
             onDoubleClick={() => canDrill && onDrillDown?.(t.node)}
+            onContextMenu={onNodeContextMenu ? (e) => onNodeContextMenu(t.node, e) : undefined}
             title={`${t.node.name} — ${formatBytes(t.node.size)}`}
             style={{
               position: "absolute",

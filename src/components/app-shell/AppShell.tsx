@@ -7,6 +7,8 @@ import { ToastHost } from "@/components/toast/ToastHost";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { HelpDialog } from "@/components/dialogs/HelpDialog";
 import { NewScanDialog } from "@/components/dialogs/NewScanDialog";
+import { PropertiesDialog } from "@/components/dialogs/PropertiesDialog";
+import { ContextMenu } from "@/components/menu/ContextMenu";
 import { useUiStore } from "@/state/uiStore";
 import { getAppVersion } from "@/api/backend";
 import { StartupDialogs } from "@/components/dialogs/StartupDialogs";
@@ -28,6 +30,18 @@ export function AppShell() {
   useEffect(() => {
     document.documentElement.setAttribute("data-accent", accent);
   }, [accent]);
+
+  // No browser menu (Back, Reload, Print, Inspect...) on right-click:
+  // files and folders get the app's own menu, text fields keep the
+  // standard cut/copy/paste one.
+  useEffect(() => {
+    const block = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, [contenteditable='true']")) return;
+      e.preventDefault();
+    };
+    document.addEventListener("contextmenu", block);
+    return () => document.removeEventListener("contextmenu", block);
+  }, []);
 
   // The scheduler runs in the backend whatever page is open; subscribing
   // here makes its finished runs toast everywhere.
@@ -56,6 +70,8 @@ export function AppShell() {
       <SettingsDialog />
       <HelpDialog />
       <NewScanDialog />
+      <PropertiesDialog />
+      <ContextMenu />
       <StartupDialogs />
     </div>
   );

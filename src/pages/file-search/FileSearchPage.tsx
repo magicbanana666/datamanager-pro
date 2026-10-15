@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { useEffect, useMemo, useState } from "react";
 import { Copy, File, FileText, FolderOpen, Search, X } from "lucide-react";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -54,6 +55,7 @@ function parseMb(value: string): number | null {
 }
 
 export function FileSearchPage() {
+  const fsMenu = useFsContextMenu();
   const run = useSearchStore();
   const [location, setLocation] = useState(() => useSearchStore.getState().args?.[0] ?? "");
   const [term, setTerm] = useState(() => useSearchStore.getState().args?.[1].query ?? "");
@@ -351,6 +353,11 @@ export function FileSearchPage() {
               selectedId={selected?.id ?? null}
               onRowClick={setSelected}
               onRowDoubleClick={(r) => r.hit && void runAction(() => openPath(r.hit!.path))}
+              onRowContextMenu={(r, e) => {
+                setSelected(r);
+                if (r.hit) fsMenu.open(e, { path: r.hit.path, kind: "file" });
+                else e.preventDefault();
+              }}
               emptyMessage={
                 running
                   ? "Searching..."

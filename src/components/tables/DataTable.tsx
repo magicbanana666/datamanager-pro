@@ -21,6 +21,8 @@ interface DataTableProps<T> {
   selectedId?: string | null;
   onRowClick?: (row: T) => void;
   onRowDoubleClick?: (row: T) => void;
+  /** Right-click on a row (the app's own menu; see useFsContextMenu). */
+  onRowContextMenu?: (row: T, event: React.MouseEvent) => void;
   rowClassName?: (row: T) => string;
   emptyMessage?: string;
   className?: string;
@@ -42,6 +44,7 @@ export function DataTable<T>({
   selectedId,
   onRowClick,
   onRowDoubleClick,
+  onRowContextMenu,
   rowClassName,
   emptyMessage = "No results.",
   className,
@@ -187,6 +190,7 @@ export function DataTable<T>({
                 key={id}
                 onClick={() => onRowClick?.(row)}
                 onDoubleClick={() => onRowDoubleClick?.(row)}
+                onContextMenu={onRowContextMenu ? (e) => onRowContextMenu(row, e) : undefined}
                 style={{ height: "var(--row-h)" }}
                 className={clsx(
                   "flex border-b border-border/60 text-[12.5px] transition-colors",

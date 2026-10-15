@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { useMemo, useState } from "react";
 import {
   ArrowRightLeft,
@@ -63,6 +64,7 @@ const PHASE_LABELS: Record<HashJobProgress["phase"], string> = {
 const CATEGORY_LABELS = FILE_TYPE_CATEGORIES.map((c) => c.label);
 
 export function ComparisonPage() {
+  const fsMenu = useFsContextMenu();
   const run = useComparisonStore();
   // The last run (or an opened project) sets these; a first visit starts empty.
   const [locationA, setLocationA] = useState(() => run.args?.[0] ?? run.result?.a.location ?? "");
@@ -431,6 +433,13 @@ export function ComparisonPage() {
           getRowId={(r) => r.id}
           selectedId={selectedRow?.id ?? null}
           onRowClick={setSelectedRow}
+          onRowContextMenu={(r, e) => {
+            setSelectedRow(r);
+            // The copy on the side chosen below the table, else whichever exists.
+            const folder = (side === "a" ? r.pathA : r.pathB) ?? r.pathA ?? r.pathB;
+            if (!folder) return e.preventDefault();
+            fsMenu.open(e, { path: fullPath(folder, r.name), kind: "file" }, () => setHiddenRows((h) => new Set(h).add(r.id)));
+          }}
           emptyMessage={running ? "Comparing..." : "No entries in this category."}
           className="h-full border-0 rounded-none"
         />

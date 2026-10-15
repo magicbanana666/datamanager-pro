@@ -13,6 +13,11 @@ interface UiState {
   openNewScan: () => void;
   closeNewScan: () => void;
 
+  /** The Properties dialog (right-click > Properties). */
+  propertiesPath: string | null;
+  openProperties: (path: string) => void;
+  closeProperties: () => void;
+
   /** Bumped when a project is opened, so every page remounts and reads
    * the restored locations. */
   pageEpoch: number;
@@ -40,6 +45,10 @@ export const useUiStore = create<UiState>((set) => ({
   newScanOpen: false,
   openNewScan: () => set({ newScanOpen: true }),
   closeNewScan: () => set({ newScanOpen: false }),
+
+  propertiesPath: null,
+  openProperties: (propertiesPath) => set({ propertiesPath }),
+  closeProperties: () => set({ propertiesPath: null }),
 
   pageEpoch: 0,
   remountPages: () => set((s) => ({ pageEpoch: s.pageEpoch + 1 })),

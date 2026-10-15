@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { useMemo, useState } from "react";
 import { FolderOpen, Pause, Play, Square } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
@@ -51,6 +52,7 @@ function fromBackend(mode: BackendTransferMode | undefined): TransferMode {
 }
 
 export function DataTransferPage() {
+  const fsMenu = useFsContextMenu();
   const run = useTransferStore();
   // Starts from the last request, so navigating back mid-transfer
   // shows what's running.
@@ -188,6 +190,12 @@ export function DataTransferPage() {
               columns={columns}
               rows={rows}
               getRowId={(r) => String(r.id)}
+              onRowContextMenu={(r, e) =>
+                fsMenu.open(e, {
+                  path: ["delete-dest", "copy-back", "update-back"].includes(r.action) ? r.destPath : r.sourcePath,
+                  kind: r.isFolder ? "folder" : "file",
+                })
+              }
               className="h-full border-0 rounded-none"
               emptyMessage={run.status === "analyzing" ? "Analyzing..." : "Start a transfer to see its files here."}
             />
