@@ -74,25 +74,3 @@ export const folderLargestFiles: LargestFileEntry[] = [
   { name: "report.pdf", path: "...\\Documentation", size: gb(2.1) },
   { name: "archive.zip", path: "...\\Products", size: gb(1.8) },
 ];
-
-export const networkFileTypeStats: CategoryStat[] = [
-  { label: "Documents", value: gb(699.5), percent: 28.4, colorIndex: 4 },
-  { label: "Images", value: gb(460.9), percent: 18.7, colorIndex: 3 },
-  { label: "Videos", value: gb(396.4), percent: 16.1, colorIndex: 2 },
-  { label: "Archives", value: gb(303.1), percent: 12.3, colorIndex: 1 },
-  { label: "Executables", value: gb(168.6), percent: 6.8, colorIndex: 7 },
-  { label: "Others", value: gb(437.5), percent: 17.7, colorIndex: 6 },
-];
-
-export const networkTopFiles: (LargestFileEntry & { rank: number })[] = [
-  { rank: 1, name: "VM_Backup.vhdx", path: "\\\\NAS\\Backups\\VMs\\", size: gb(52.1) },
-  { rank: 2, name: "Project_2026.iso", path: "\\\\NAS\\ISO\\", size: gb(24.8) },
-  { rank: 3, name: "Database.bak", path: "\\\\NAS\\Clients\\AMGroup\\", size: gb(18.6) },
-  { rank: 4, name: "Video_Training.mp4", path: "\\\\NAS\\Training\\", size: gb(12.4) },
-  { rank: 5, name: "Install.wim", path: "\\\\NAS\\Software\\", size: gb(8.3) },
-  { rank: 6, name: "Archive.zip", path: "\\\\NAS\\Archive\\", size: gb(6.7) },
-  { rank: 7, name: "CAD_Drawings.7z", path: "\\\\NAS\\Projects\\", size: gb(5.4) },
-  { rank: 8, name: "Report_2026.pdf", path: "\\\\NAS\\Management\\", size: gb(4.8) },
-  { rank: 9, name: "Image(1).vmdk", path: "\\\\NAS\\Backups\\", size: gb(4.2) },
-  { rank: 10, name: "TeamsExport.zip", path: "\\\\NAS\\Clients\\Desmet\\", size: gb(3.9) },
-];

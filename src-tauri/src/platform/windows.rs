@@ -15,6 +15,7 @@
 
 mod fileops;
 mod mft;
+pub mod network;
 pub use fileops::{
     clear_readonly, copy_attributes, copy_dacl, free_space_bytes, recycle,
 };

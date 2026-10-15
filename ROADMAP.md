@@ -10,7 +10,9 @@
 **Phase 5 — Complete** (real search/comparison/duplicates, see
 [PHASE5.md](./PHASE5.md)).
 **Phases 6 & 7 — Complete** (copy/move/sync engine with journal and
-resume, see [PHASE6.md](./PHASE6.md)). The phases below are suggested milestones
+resume, see [PHASE6.md](./PHASE6.md)).
+**Phase 8 — Complete** (network shares, see [PHASE8.md](./PHASE8.md)).
+ The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
 and simply swap mock data sources for real ones behind the same
@@ -73,13 +75,11 @@ Mirror, incremental, update-newer and two-way sync on the same engine,
 with a two-way change tracker and conflict resolution. See
 [PHASE6.md](./PHASE6.md).
 
-### Phase 8 — Network share support & IP/port scanning
-Real SMB share browsing/scanning (replacing `src/mock/network.ts`) and
-a real, consent-gated IP/port scanner (replacing `src/mock/portscan.ts`)
-using async TCP connect scans - always behind explicit user action and
-scoped to networks the user has permission to scan. Phase 2 already
-validates UNC path syntax/reachability via `validate_path`; this phase
-adds actual SMB share discovery and LAN host enumeration on top of that.
+### ~~Phase 8 — Network share support~~ ✅ Complete
+Real SMB share scanning, server shares, access rights, sessions,
+connection status and read-speed measurement on Network Analysis. The
+IP/port scanner part was not built; that page stays a demo. See
+[PHASE8.md](./PHASE8.md).
 
 ### Phase 9 — Scheduler & reporting
 A real scheduler (either an internal cron-like runner or genuine

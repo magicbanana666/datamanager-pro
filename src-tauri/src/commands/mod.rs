@@ -2,8 +2,8 @@
 //!
 //! `system`, `filesystem`, `storage`, `scan`, `search`, `comparison` and
 //! `duplicates` are read-only. `transfer` and `fileops` (Phase 6/7)
-//! modify files, only on explicit user action. `network` and
-//! `scheduler` remain placeholders for later phases.
+//! modify files, only on explicit user action. `network` (Phase 8) is
+//! read-only too; `scheduler` remains a placeholder.
 
 pub mod comparison;
 pub mod duplicates;

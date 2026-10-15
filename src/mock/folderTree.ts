@@ -209,21 +209,3 @@ export const projectsFolderTree: FsNode = buildTree({
 // ---------------------------------------------------------------------------
 // \\NAS\CompanyData - used by the Network Analysis page
 // ---------------------------------------------------------------------------
-export const networkTree: FsNode = buildTree({
-  name: "\\\\NAS\\CompanyData",
-  size: gb(2482.1),
-  fileCount: 1234567,
-  folderCount: 12458,
-  lastModified: "2026-09-07T14:22:00",
-  kind: "drive",
-  children: [
-    { name: "Clients", size: gb(847.1), fileCount: 412356, folderCount: 4125, lastModified: "2026-09-07T13:11:00" },
-    { name: "Projects", size: gb(562.3), fileCount: 284125, folderCount: 2834, lastModified: "2026-09-06T18:44:00" },
-    { name: "Management", size: gb(328.6), fileCount: 145221, folderCount: 1442, lastModified: "2026-09-06T11:02:00" },
-    { name: "Shared", size: gb(284.1), fileCount: 132557, folderCount: 1021, lastModified: "2026-09-05T16:37:00" },
-    { name: "Software", size: gb(186.4), fileCount: 98214, folderCount: 892, lastModified: "2026-09-04T09:18:00", category: "executable" },
-    { name: "Archive", size: gb(154.2), fileCount: 76112, folderCount: 645, lastModified: "2026-09-03T21:40:00", category: "archive" },
-    { name: "ISO", size: gb(72.1), fileCount: 31884, folderCount: 221, lastModified: "2026-09-01T12:05:00", category: "iso" },
-    { name: "Backups", size: gb(47.3), fileCount: 18774, folderCount: 198, lastModified: "2026-08-31T07:22:00", category: "archive" },
-  ],
-});

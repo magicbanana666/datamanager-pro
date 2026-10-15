@@ -38,90 +38,98 @@ interface ScanState {
   loadChildren: (node: FsNode) => Promise<FsNode>;
 }
 
-export const useScanStore = create<ScanState>((set, get) => {
-  // Not part of the reactive state on purpose - components never need
-  // to read it, and it must survive a `set()` re-render untouched.
-  let unlisten: (() => void) | null = null;
+function createScanStore() {
+  return create<ScanState>((set, get) => {
+    // Not part of the reactive state on purpose - components never need
+    // to read it, and it must survive a `set()` re-render untouched.
+    let unlisten: (() => void) | null = null;
 
-  return {
-    status: "idle",
-    scanId: null,
-    path: null,
-    progress: null,
-    result: null,
-    error: null,
+    return {
+      status: "idle",
+      scanId: null,
+      path: null,
+      progress: null,
+      result: null,
+      error: null,
 
-    start: async (path, options) => {
-      unlisten?.();
-      unlisten = null;
+      start: async (path, options) => {
+        unlisten?.();
+        unlisten = null;
 
-      const scanId = generateScanId();
-      set({
-        status: "scanning",
-        scanId,
-        path,
-        progress: null,
-        result: null,
-        error: null,
-      });
+        const scanId = generateScanId();
+        set({
+          status: "scanning",
+          scanId,
+          path,
+          progress: null,
+          result: null,
+          error: null,
+        });
 
-      // Subscribed *before* the backend is told to start - see
-      // api/scan.ts's doc comment on why order matters here.
-      unlisten = await subscribeScanEvents(scanId, {
-        onProgress: (progress) => {
-          if (get().scanId === scanId) set({ progress });
-        },
-        onComplete: (result) => {
-          if (get().scanId === scanId) set({ status: "completed", result });
-        },
-        onCancelled: () => {
-          if (get().scanId === scanId) set({ status: "cancelled" });
-        },
-        onError: (error) => {
-          if (get().scanId === scanId) set({ status: "error", error });
-        },
-      });
+        // Subscribed *before* the backend is told to start - see
+        // api/scan.ts's doc comment on why order matters here.
+        unlisten = await subscribeScanEvents(scanId, {
+          onProgress: (progress) => {
+            if (get().scanId === scanId) set({ progress });
+          },
+          onComplete: (result) => {
+            if (get().scanId === scanId) set({ status: "completed", result });
+          },
+          onCancelled: () => {
+            if (get().scanId === scanId) set({ status: "cancelled" });
+          },
+          onError: (error) => {
+            if (get().scanId === scanId) set({ status: "error", error });
+          },
+        });
 
-      try {
-        await startScan(scanId, path, options);
-      } catch (err) {
-        if (get().scanId === scanId) {
-          set({ status: "error", error: toAppError(err) });
+        try {
+          await startScan(scanId, path, options);
+        } catch (err) {
+          if (get().scanId === scanId) {
+            set({ status: "error", error: toAppError(err) });
+          }
         }
-      }
-    },
+      },
 
-    cancel: async () => {
-      const { scanId, status } = get();
-      if (!scanId || status !== "scanning") return;
-      try {
-        await cancelScan(scanId);
-      } catch {
-        // The scan may have already finished server-side between the
-        // Cancel click and this call landing - the eventual
-        // scan-complete/scan-cancelled event is the source of truth,
-        // not this promise.
-      }
-    },
+      cancel: async () => {
+        const { scanId, status } = get();
+        if (!scanId || status !== "scanning") return;
+        try {
+          await cancelScan(scanId);
+        } catch {
+          // The scan may have already finished server-side between the
+          // Cancel click and this call landing - the eventual
+          // scan-complete/scan-cancelled event is the source of truth,
+          // not this promise.
+        }
+      },
 
-    reset: () => {
-      unlisten?.();
-      unlisten = null;
-      set({ status: "idle", scanId: null, path: null, progress: null, result: null, error: null });
-    },
+      reset: () => {
+        unlisten?.();
+        unlisten = null;
+        set({ status: "idle", scanId: null, path: null, progress: null, result: null, error: null });
+      },
 
-    loadChildren: async (node) => {
-      const { scanId, status } = get();
-      if (!scanId || status !== "completed" || !needsChildren(node)) return node;
-      const loaded = await getSubtree(scanId, node.path);
-      // Deliberately grafted onto the existing node in place, not
-      // copied: the result tree is this session's cache, so navigating
-      // back to (or re-expanding) this folder never refetches, and
-      // every breadcrumb/selection reference to it sees the children.
-      // Callers still trigger a re-render themselves (a new breadcrumb
-      // entry or expanded-ids set) since React can't see the mutation.
-      node.children = loaded.children;
-      return node;
-    },
-  };
-});
+      loadChildren: async (node) => {
+        const { scanId, status } = get();
+        if (!scanId || status !== "completed" || !needsChildren(node)) return node;
+        const loaded = await getSubtree(scanId, node.path);
+        // Deliberately grafted onto the existing node in place, not
+        // copied: the result tree is this session's cache, so navigating
+        // back to (or re-expanding) this folder never refetches, and
+        // every breadcrumb/selection reference to it sees the children.
+        // Callers still trigger a re-render themselves (a new breadcrumb
+        // entry or expanded-ids set) since React can't see the mutation.
+        node.children = loaded.children;
+        return node;
+      },
+    };
+  });
+}
+
+/** Disk Analysis and Folder Analysis share this scan. */
+export const useScanStore = createScanStore();
+/** Network Analysis has its own, so scanning a share doesn't replace the
+ * folder scan. */
+export const useNetworkScanStore = createScanStore();

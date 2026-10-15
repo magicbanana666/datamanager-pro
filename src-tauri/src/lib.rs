@@ -20,6 +20,10 @@ mod utils;
 use commands::comparison::{cancel_comparison, start_comparison};
 use commands::duplicates::{cancel_duplicate_scan, start_duplicate_scan};
 use commands::fileops::{delete_files, save_text_file};
+use commands::network::{
+    get_access_rights, get_share_connection, list_server_sessions, list_server_shares,
+    measure_read_speed,
+};
 use commands::filesystem::{
     get_directory_summary, get_file_metadata, get_folder_metadata, list_directory, validate_path,
 };
@@ -89,6 +93,11 @@ pub fn run() {
             open_folder,
             delete_files,
             save_text_file,
+            get_share_connection,
+            list_server_shares,
+            list_server_sessions,
+            get_access_rights,
+            measure_read_speed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
