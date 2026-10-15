@@ -11,6 +11,7 @@ pub mod network_service;
 pub mod path_service;
 pub mod scan_analysis_service;
 pub mod scan_service;
+pub mod scheduler_service;
 pub mod search_service;
 pub mod storage_service;
 pub mod sync_state;

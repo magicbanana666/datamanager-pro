@@ -8,6 +8,7 @@ import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { HelpDialog } from "@/components/dialogs/HelpDialog";
 import { PlaceholderDialog } from "@/components/dialogs/PlaceholderDialog";
 import { useSettingsStore } from "@/state/settingsStore";
+import { useSchedulerStore } from "@/state/schedulerStore";
 
 export function AppShell() {
   const density = useSettingsStore((s) => s.settings.appearance.density);
@@ -15,6 +16,12 @@ export function AppShell() {
   useEffect(() => {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
+
+  // The scheduler runs in the backend whatever page is open; subscribing
+  // here makes its finished runs toast everywhere.
+  useEffect(() => {
+    void useSchedulerStore.getState().init();
+  }, []);
 
   return (
     <div className="flex h-screen w-screen min-w-0 flex-col bg-canvas text-fg">

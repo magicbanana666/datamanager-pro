@@ -38,6 +38,10 @@ use commands::transfer::{
     list_interrupted_transfers, open_folder, resume_interrupted_transfer, schedule_shutdown,
     set_transfer_paused, start_transfer, TransferRegistry,
 };
+use commands::scheduler::{
+    clear_task_history, delete_scheduled_task, get_scheduler, run_task_now, save_scheduled_task,
+    set_task_enabled, update_scheduler_settings, SchedulerStore,
+};
 use commands::JobRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -98,7 +102,20 @@ pub fn run() {
             list_server_sessions,
             get_access_rights,
             measure_read_speed,
+            get_scheduler,
+            save_scheduled_task,
+            delete_scheduled_task,
+            set_task_enabled,
+            update_scheduler_settings,
+            clear_task_history,
+            run_task_now,
         ])
+        .setup(|app| {
+            let handle = app.handle().clone();
+            tauri::Manager::manage(app, SchedulerStore::load(&handle));
+            commands::scheduler::start_runner(handle);
+            Ok(())
+        })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

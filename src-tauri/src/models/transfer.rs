@@ -347,6 +347,9 @@ pub struct TransferState {
     active: Mutex<std::collections::HashMap<u32, (u64, u64)>>,
     updates: Mutex<Vec<ItemUpdate>>,
     log: Mutex<Vec<String>>,
+    /// A copy of every log line, when `keep_full_log` was called (the
+    /// scheduler's "Log all operations").
+    full_log: Mutex<Option<Vec<String>>>,
     /// The listing phase reuses the scan engines' skip bookkeeping.
     pub scan: crate::models::scan::ScanProgressState,
 }
@@ -367,6 +370,7 @@ impl TransferState {
             active: Mutex::new(std::collections::HashMap::new()),
             updates: Mutex::new(Vec::new()),
             log: Mutex::new(Vec::new()),
+            full_log: Mutex::new(None),
             scan: crate::models::scan::ScanProgressState::new(),
         }
     }
@@ -424,7 +428,19 @@ impl TransferState {
     }
 
     pub fn log(&self, line: impl Into<String>) {
-        self.log.lock().unwrap().push(line.into());
+        let line = line.into();
+        if let Some(full) = self.full_log.lock().unwrap().as_mut() {
+            full.push(line.clone());
+        }
+        self.log.lock().unwrap().push(line);
+    }
+
+    pub fn keep_full_log(&self) {
+        *self.full_log.lock().unwrap() = Some(Vec::new());
+    }
+
+    pub fn take_full_log(&self) -> Vec<String> {
+        self.full_log.lock().unwrap().take().unwrap_or_default()
     }
 
     pub fn set_active(&self, id: u32, bytes_done: u64, size: u64) {

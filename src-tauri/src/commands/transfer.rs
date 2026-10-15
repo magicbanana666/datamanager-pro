@@ -360,42 +360,53 @@ async fn run_execution(
     summary: PlanSummary,
     resumed: Option<(Journal, JournalProgress)>,
 ) {
+    let result = execute_job(&app, &job_id, job, request, items, summary, resumed).await;
+    app.state::<TransferRegistry>().remove(&job_id);
+    match result {
+        Err(error) => emit_error(&app, &job_id, error),
+        Ok(None) => {
+            let _ = app.emit("transfer-cancelled", &CancelledTransferPayload { job_id: &job_id, resumable: true });
+        }
+        Ok(Some(report)) => {
+            let _ = app.emit("transfer-complete", &report);
+        }
+    }
+}
+
+/// Executes a job and returns its report (`None` when cancelled) without
+/// emitting the terminal event - shared by the UI flow and the scheduler.
+async fn execute_job(
+    app: &AppHandle,
+    job_id: &str,
+    job: Arc<Job>,
+    request: TransferRequest,
+    items: Vec<PlanItem>,
+    summary: PlanSummary,
+    resumed: Option<(Journal, JournalProgress)>,
+) -> Result<Option<TransferReport>, AppError> {
     let is_resume = resumed.is_some();
     // Pre-flight: refuse rather than fail halfway on a full disk.
     if !is_resume {
         if let Some(free) = summary.dest_free_bytes {
             if summary.net_bytes_needed > free {
-                app.state::<TransferRegistry>().remove(&job_id);
-                emit_error(
-                    &app,
-                    &job_id,
-                    AppError::new(
+                return Err(AppError::new(
                         AppErrorCode::IoError,
                         format!(
                             "Not enough free space at the destination: {} needed, {} available.",
                             crate::utils::size::format_bytes(summary.net_bytes_needed),
                             crate::utils::size::format_bytes(free)
                         ),
-                    ),
-                );
-                return;
+                    ));
             }
         }
     }
 
-    let journal_dir = match data_dir(&app, "journals") {
-        Ok(d) => d,
-        Err(e) => {
-            app.state::<TransferRegistry>().remove(&job_id);
-            emit_error(&app, &job_id, e);
-            return;
-        }
-    };
+    let journal_dir = data_dir(app, "journals")?;
     let (journal, progress) = match resumed {
         Some(r) => r,
         None => {
             let header = JournalHeader {
-                job_id: job_id.clone(),
+                job_id: job_id.to_string(),
                 request: request.clone(),
                 started_at: system_time_to_iso8601(std::time::SystemTime::now()).unwrap_or_default(),
                 items: items.clone(),
@@ -403,13 +414,7 @@ async fn run_execution(
             match Journal::create(&journal_dir, &header) {
                 Ok(j) => (j, JournalProgress::default()),
                 Err(e) => {
-                    app.state::<TransferRegistry>().remove(&job_id);
-                    emit_error(
-                        &app,
-                        &job_id,
-                        AppError::new(AppErrorCode::IoError, "The transfer journal could not be written.").with_details(e.to_string()),
-                    );
-                    return;
+                    return Err(AppError::new(AppErrorCode::IoError, "The transfer journal could not be written.").with_details(e.to_string()));
                 }
             }
         }
@@ -425,9 +430,9 @@ async fn run_execution(
         request.destination
     ));
     let req = request.clone();
-    let sync_dir = data_dir(&app, "sync-state").ok();
+    let sync_dir = data_dir(app, "sync-state").ok();
     let work_state = state.clone();
-    let result = with_progress(&app, &job_id, state.clone(), move || {
+    let result = with_progress(app, job_id, state.clone(), move || {
         let outcome = transfer_service::execute(&req, &items, &journal, &progress, &work_state);
         if !work_state.is_cancelled() {
             if req.mode == TransferMode::TwoWay {
@@ -443,39 +448,35 @@ async fn run_execution(
         outcome
     })
     .await;
-    app.state::<TransferRegistry>().remove(&job_id);
 
     match result {
         Err(join_err) => {
             tracing::error!(error = %join_err, job_id = %job_id, "transfer task panicked");
-            emit_error(&app, &job_id, AppError::new(AppErrorCode::Unknown, "An unexpected internal error occurred during the transfer."));
+            Err(AppError::new(AppErrorCode::Unknown, "An unexpected internal error occurred during the transfer."))
         }
         Ok(_) if state.is_cancelled() => {
             tracing::info!(job_id = %job_id, "transfer cancelled");
-            let _ = app.emit("transfer-cancelled", &CancelledTransferPayload { job_id: &job_id, resumable: true });
+            Ok(None)
         }
         Ok(outcome) => {
             let elapsed_ms = started.elapsed().as_millis() as u64;
             tracing::info!(job_id = %job_id, elapsed_ms, copied = outcome.files_copied, errors = outcome.error_count, "transfer complete");
-            let _ = app.emit(
-                "transfer-complete",
-                &TransferReport {
-                    job_id: job_id.clone(),
-                    mode: request.mode,
-                    source: request.source,
-                    destination: request.destination,
-                    files_copied: outcome.files_copied,
-                    bytes_copied: outcome.bytes_copied,
-                    files_deleted: outcome.files_deleted,
-                    folders_created: outcome.folders_created,
-                    files_skipped: outcome.files_skipped,
-                    files_verified: outcome.files_verified,
-                    errors: outcome.errors,
-                    error_count: outcome.error_count,
-                    elapsed_ms,
-                    resumed: is_resume,
-                },
-            );
+            Ok(Some(TransferReport {
+                job_id: job_id.to_string(),
+                mode: request.mode,
+                source: request.source,
+                destination: request.destination,
+                files_copied: outcome.files_copied,
+                bytes_copied: outcome.bytes_copied,
+                files_deleted: outcome.files_deleted,
+                folders_created: outcome.folders_created,
+                files_skipped: outcome.files_skipped,
+                files_verified: outcome.files_verified,
+                errors: outcome.errors,
+                error_count: outcome.error_count,
+                elapsed_ms,
+                resumed: is_resume,
+            }))
         }
     }
 }
@@ -573,4 +574,48 @@ pub fn open_folder(app: AppHandle, path: String) -> Result<(), AppError> {
     app.opener()
         .open_path(&path, None::<&str>)
         .map_err(|e| AppError::new(AppErrorCode::IoError, "Could not open the folder.").with_details(e.to_string()))
+}
+
+/// Analyzes and executes `request` with no page driving it (the
+/// scheduler). Progress events still go out under `job_id`, and
+/// `cancel_transfer` works on it; the outcome is returned instead of
+/// emitted. With `keep_log`, the full log comes back too.
+pub(crate) async fn run_headless(
+    app: &AppHandle,
+    job_id: &str,
+    request: TransferRequest,
+    keep_log: bool,
+) -> (Result<Option<TransferReport>, AppError>, Vec<String>) {
+    let request = match validate(request) {
+        Ok(r) => r,
+        Err(e) => return (Err(e), Vec::new()),
+    };
+    let job = app.state::<TransferRegistry>().insert(job_id);
+    if keep_log {
+        job.state.keep_full_log();
+    }
+    let state = job.state.clone();
+    let req = request.clone();
+    let sync_dir = data_dir(app, "sync-state").ok();
+    let plan = with_progress(app, job_id, state.clone(), move || {
+        let previous = (req.mode == TransferMode::TwoWay)
+            .then(|| sync_dir.and_then(|d| sync_state::load(&d, &req.source, &req.destination)))
+            .flatten();
+        transfer_service::analyze(&req, previous.as_ref(), &state)
+    })
+    .await;
+    let result = match plan {
+        Err(_) => Err(AppError::new(AppErrorCode::Unknown, "An unexpected internal error occurred while analyzing.")),
+        Ok(_) if job.state.is_cancelled() => Ok(None),
+        Ok(plan) => {
+            job.state.log(format!(
+                "Analysis: {} new, {} changed, {} unchanged, {} to delete.",
+                plan.summary.new_files, plan.summary.updated_files, plan.summary.unchanged_files, plan.summary.deletions
+            ));
+            let work = plan.items.into_iter().filter(|i| i.action.is_work()).collect();
+            execute_job(app, job_id, job.clone(), request, work, plan.summary, None).await
+        }
+    };
+    app.state::<TransferRegistry>().remove(job_id);
+    (result, job.state.take_full_log())
 }
