@@ -6,7 +6,9 @@
 **Phase 3 — Complete** (real recursive scanner, see
 [PHASE3.md](./PHASE3.md)).
 **Phase 4 — Complete** (real Treemap/charts/tables, see
-[PHASE4.md](./PHASE4.md)). The phases below are suggested milestones
+[PHASE4.md](./PHASE4.md)).
+**Phase 5 — Complete** (real search/comparison/duplicates, see
+[PHASE5.md](./PHASE5.md)). The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
 and simply swap mock data sources for real ones behind the same
@@ -50,11 +52,12 @@ neither has real data to show yet. Persistence (reopening a completed
 scan without rescanning) was explicitly deferred as a fast-follow, not
 built this pass.
 
-### Phase 5 — Search, comparison & duplicate engine
+### ~~Phase 5 — Search, comparison & duplicate engine~~ ✅ Complete
 Real file-name/content search (with regex, in-archive search),
 real folder comparison (size/timestamp, content hash, name-only), and
-a real duplicate-detection engine (hash-based grouping). Replace
-`src/mock/search.ts`, `src/mock/comparison.ts`, `src/mock/duplicates.ts`.
+a real duplicate-detection engine (hash-based grouping, hard-link
+aware), plus the Folder Analysis Duplicates tab. All read-only. See
+[PHASE5.md](./PHASE5.md).
 
 ### Phase 6 — Copy/move engine with journaling & resume
 A real, cancellable/resumable copy/move engine with a transaction

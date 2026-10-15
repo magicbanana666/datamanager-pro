@@ -57,7 +57,11 @@ function parseMb(value: string): number | null {
 }
 
 export function DuplicateFinderPage() {
-  const [locations, setLocations] = useState<{ path: string; checked: boolean }[]>([]);
+  // Starts from the last run's roots, so a run started elsewhere (Folder
+  // Analysis' Duplicates tab) shows which folder it covers.
+  const [locations, setLocations] = useState<{ path: string; checked: boolean }[]>(
+    () => useDuplicateStore.getState().args?.[0].map((path) => ({ path, checked: true })) ?? [],
+  );
   const [criteria, setCriteria] = useState<DuplicateCriteriaId>("exact");
   const [ignore, setIgnore] = useState({ ignoreCase: true, ignoreHidden: true, ignoreSystem: true });
   const [minMb, setMinMb] = useState("1");

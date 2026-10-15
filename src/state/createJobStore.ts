@@ -18,6 +18,8 @@ export type JobStatus = "idle" | "running" | "completed" | "cancelled" | "error"
 export interface JobState<TResult, TArgs extends unknown[]> {
   status: JobStatus;
   scanId: string | null;
+  /** What the current/last run was started with. */
+  args: TArgs | null;
   progress: HashJobProgress | null;
   result: TResult | null;
   error: AppError | null;
@@ -47,6 +49,7 @@ export function createJobStore<TResult extends { scanId: string }, TArgs extends
     return {
       status: "idle",
       scanId: null,
+      args: null,
       progress: null,
       result: null,
       error: null,
@@ -56,7 +59,7 @@ export function createJobStore<TResult extends { scanId: string }, TArgs extends
         unlisten = null;
 
         const scanId = config.generateId();
-        set({ status: "running", scanId, progress: null, result: null, error: null });
+        set({ status: "running", scanId, args, progress: null, result: null, error: null });
 
         // Subscribed before the job starts - see api/scan.ts on why.
         unlisten = await subscribeJobEvents<TResult>(config.eventPrefix, scanId, {

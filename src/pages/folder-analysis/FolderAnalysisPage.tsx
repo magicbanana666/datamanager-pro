@@ -32,6 +32,7 @@ import { useScanNotifications } from "@/hooks/useScanNotifications";
 import { useFilesystemStore } from "@/state/filesystemStore";
 import { toAppError } from "@/api/backend";
 import { useScanStore } from "@/state/scanStore";
+import { useDuplicateStore } from "@/state/duplicateStore";
 import { toast } from "@/state/toastStore";
 import { useUiStore } from "@/state/uiStore";
 
@@ -110,6 +111,26 @@ export function FolderAnalysisPage() {
   const isReal = realScan.status === "completed" && !!realScan.result;
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
+
+  // The Duplicates tab runs the real duplicate finder on the folder in
+  // view (the global run, so the Duplicate Finder page shows the same
+  // result) and only shows it while that run covers exactly this folder.
+  const dupRun = useDuplicateStore();
+  const dupForThisFolder =
+    isReal &&
+    dupRun.args?.[0].length === 1 &&
+    dupRun.args[0][0].toLowerCase() === currentNode.path.toLowerCase();
+  const dupResult = dupForThisFolder && dupRun.status === "completed" ? dupRun.result : null;
+  function findDuplicatesHere() {
+    void dupRun.start([currentNode.path], {
+      criteria: "exact",
+      ignoreCase: true,
+      ignoreHidden: true,
+      ignoreSystem: true,
+      minSize: 0,
+      maxSize: null,
+    });
+  }
   const visibleRows = useMemo(() => flattenVisible(currentNode, expandedIds), [currentNode, expandedIds]);
   // O(1) per-row depth lookup for the Name column - a linear `find`
   // per row made rendering a wide expanded folder quadratic.
@@ -316,8 +337,7 @@ export function FolderAnalysisPage() {
 
       <div className="flex items-center justify-between gap-3">
         <Tabs tabs={TABS} active={tab} onChange={setTab} className="min-w-0 flex-1" />
-        {/* Real duplicate detection is Phase 5's job, so Duplicates stays badged regardless. */}
-        {(!isReal || tab === "duplicates") && <DemoBadge />}
+        {(!isReal || (tab === "duplicates" && !dupResult)) && <DemoBadge />}
       </div>
 
       {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx -
@@ -380,18 +400,62 @@ export function FolderAnalysisPage() {
           )}
           {tab === "duplicates" && (
             <div className="flex flex-col gap-2.5 overflow-y-auto">
-              <p className="text-xs text-fg-muted">Duplicate files detected within this folder (sample):</p>
-              {duplicateGroups.slice(0, 3).map((g) => (
-                <div key={g.id} className="rounded-md border border-border bg-surface-alt px-3 py-2">
-                  <div className="flex items-center justify-between text-[12.5px] font-medium text-fg">
-                    <span>{g.label}</span>
-                    <span className="text-fg-muted">{g.files.length} copies · {formatBytes(g.size)}</span>
+              {dupResult ? (
+                <>
+                  <p className="text-xs text-fg-muted">
+                    {dupResult.totalGroups === 0
+                      ? `No duplicates among ${formatNumber(dupResult.filesCompared)} files in this folder.`
+                      : `${formatNumber(dupResult.totalGroups)} groups of identical files in this folder - ${formatBytes(dupResult.totalWastedBytes)} recoverable. Largest:`}
+                  </p>
+                  {dupResult.groups.slice(0, 10).map((g) => (
+                    <div key={g.key} className="rounded-md border border-border bg-surface-alt px-3 py-2">
+                      <div className="flex items-center justify-between gap-3 text-[12.5px] font-medium text-fg">
+                        <span className="truncate">{g.files[0]?.name}</span>
+                        <span className="shrink-0 text-fg-muted">
+                          {g.files.length} copies · {formatBytes(g.files[0]?.size ?? 0)} · {formatBytes(g.wastedBytes)} recoverable
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  <div className="flex gap-2">
+                    <Button onClick={() => navigate("/duplicate-finder")}>Open in Duplicate Finder</Button>
+                    <Button onClick={findDuplicatesHere}>Search again</Button>
                   </div>
-                </div>
-              ))}
-              <Button className="self-start" onClick={() => navigate("/duplicate-finder")}>
-                Open in Duplicate Finder
-              </Button>
+                </>
+              ) : isReal ? (
+                dupForThisFolder && dupRun.status === "running" ? (
+                  <div className="flex items-center gap-2 text-[12.5px] text-fg-muted">
+                    <Loader2 size={14} className="animate-spin" />
+                    {dupRun.progress?.phase === "hashing" || dupRun.progress?.phase === "comparing"
+                      ? `Comparing contents... ${formatBytes(dupRun.progress.bytesHashed)} / ${formatBytes(dupRun.progress.bytesToHash)}`
+                      : `Listing files... ${formatNumber(dupRun.progress?.filesFound ?? 0)}`}
+                    <Button size="sm" onClick={() => void dupRun.cancel()}>Cancel</Button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-xs text-fg-muted">Find files with identical content in {currentNode.path}.</p>
+                    <Button variant="primary" icon={ScanSearch} className="self-start" onClick={findDuplicatesHere} disabled={dupRun.status === "running"}>
+                      Find duplicates in this folder
+                    </Button>
+                    {dupRun.status === "running" && <p className="text-xs text-fg-muted">Another duplicate scan is running.</p>}
+                  </>
+                )
+              ) : (
+                <>
+                  <p className="text-xs text-fg-muted">Duplicate files detected within this folder (sample):</p>
+                  {duplicateGroups.slice(0, 3).map((g) => (
+                    <div key={g.id} className="rounded-md border border-border bg-surface-alt px-3 py-2">
+                      <div className="flex items-center justify-between text-[12.5px] font-medium text-fg">
+                        <span>{g.label}</span>
+                        <span className="text-fg-muted">{g.files.length} copies · {formatBytes(g.size)}</span>
+                      </div>
+                    </div>
+                  ))}
+                  <Button className="self-start" onClick={() => navigate("/duplicate-finder")}>
+                    Open in Duplicate Finder
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </Card>
