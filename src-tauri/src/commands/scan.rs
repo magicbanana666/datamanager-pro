@@ -48,14 +48,32 @@ pub struct ScanRegistry {
 /// session, keyed by scan id - so `get_subtree` can serve a folder's
 /// real children the instant the user drills into one that
 /// `scan-complete`'s own (depth-truncated) payload didn't include,
-/// with no re-scan needed. Unbounded for now (matches `ScanRegistry`'s
-/// existing "no eviction" scope) - a future phase could cap this to
-/// the last N scans or drop entries on navigating away, if repeated
-/// whole-drive scans in one session ever prove to be a real memory
-/// concern in practice.
+/// with no re-scan needed. Capped at [`MAX_CACHED_TREES`] (the oldest
+/// goes first): a whole-drive tree is hundreds of MB, and each page
+/// only ever shows its latest scan.
 #[derive(Default)]
 pub struct ScanTreeCache {
     trees: Mutex<HashMap<String, Arc<FsNode>>>,
+    /// Scan ids, oldest first.
+    order: Mutex<std::collections::VecDeque<String>>,
+}
+
+/// Disk/Folder Analysis and Network Analysis, plus room for superseded
+/// scans a page may still ask a subtree of.
+const MAX_CACHED_TREES: usize = 4;
+
+impl ScanTreeCache {
+    fn insert(&self, scan_id: String, root: FsNode) {
+        let mut trees = self.trees.lock().unwrap();
+        let mut order = self.order.lock().unwrap();
+        trees.insert(scan_id.clone(), Arc::new(root));
+        order.push_back(scan_id);
+        while order.len() > MAX_CACHED_TREES {
+            if let Some(oldest) = order.pop_front() {
+                trees.remove(&oldest);
+            }
+        }
+    }
 }
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
@@ -272,11 +290,7 @@ async fn run_and_report(
             // comment for why a full whole-drive tree can't go out in
             // one `scan-complete` event at all.
             let transport_root = truncate_for_transport(&root, TRANSPORT_DEPTH);
-            app.state::<ScanTreeCache>()
-                .trees
-                .lock()
-                .unwrap()
-                .insert(scan_id.clone(), Arc::new(root));
+            app.state::<ScanTreeCache>().insert(scan_id.clone(), root);
 
             let result = ScanResult {
                 scan_id: scan_id.clone(),

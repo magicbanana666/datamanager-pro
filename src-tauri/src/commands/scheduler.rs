@@ -35,7 +35,7 @@ pub struct SchedulerStore {
 
 impl SchedulerStore {
     pub fn load(app: &AppHandle) -> Self {
-        let base = app.path().app_data_dir().unwrap_or_else(|_| std::env::temp_dir().join("DataManagerPro"));
+        let base = crate::app_paths::data_dir(app).unwrap_or_else(|_| std::env::temp_dir().join("DataManagerPro"));
         let path = base.join("scheduler").join("tasks.json");
         Self {
             data: Mutex::new(scheduler_service::load(&path)),

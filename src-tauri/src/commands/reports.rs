@@ -8,22 +8,12 @@ use crate::models::reports::{ReportRecord, ReportRequest};
 use crate::services::report_service;
 use chrono::Local;
 use std::path::{Path, PathBuf};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
-fn reports_dir(app: &AppHandle) -> Result<PathBuf, AppError> {
-    let docs = app
-        .path()
-        .document_dir()
-        .or_else(|_| app.path().home_dir())
-        .map_err(|e| AppError::new(AppErrorCode::IoError, "The Documents folder is unavailable.").with_details(e.to_string()))?;
-    Ok(docs.join("DataManager Pro Reports"))
-}
+use crate::app_paths::reports_dir;
 
 fn index_path(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map(|d| d.join("reports").join("index.json"))
-        .map_err(|e| AppError::new(AppErrorCode::IoError, "The app data folder is unavailable.").with_details(e.to_string()))
+    crate::app_paths::data_dir(app).map(|d| d.join("reports").join("index.json"))
 }
 
 fn read_index(path: &Path) -> Vec<ReportRecord> {

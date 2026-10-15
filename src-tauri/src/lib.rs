@@ -11,7 +11,9 @@
 //! (`commands::fileops` - delete selected files, save exports). See
 //! ROADMAP.md and the PHASE*.md files.
 
+mod app_paths;
 mod commands;
+mod diagnostics;
 mod models;
 mod platform;
 mod services;
@@ -49,18 +51,25 @@ use commands::JobRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into()),
-        )
-        .init();
+    diagnostics::init();
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         "DataManager Pro starting"
     );
 
     tauri::Builder::default()
+        // First, so a second launch only focuses the running window: two
+        // instances would run every scheduled task twice and share journals.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            use tauri::Manager;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(ScanRegistry::default())
         .manage(ScanTreeCache::default())
@@ -118,6 +127,10 @@ pub fn run() {
             delete_report,
             export_report,
             reports_folder,
+            diagnostics::take_crash_reports,
+            diagnostics::dismiss_crash_reports,
+            diagnostics::log_frontend_error,
+            diagnostics::logs_folder,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

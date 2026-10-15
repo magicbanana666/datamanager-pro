@@ -43,6 +43,9 @@ xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
 regex = "1.13.1"
 zip = { version = "9.0.3", default-features = false }
 rust_xlsxwriter = "0.99.1"
+tauri-plugin-single-instance = "2.5.4"
+tauri-plugin-updater = "2.14.0"
+tauri-plugin-process = "2.4.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

@@ -81,10 +81,7 @@ struct TransferErrorPayload<'a> {
 }
 
 fn data_dir(app: &AppHandle, sub: &str) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_data_dir()
-        .map(|d| d.join(sub))
-        .map_err(|e| AppError::new(AppErrorCode::IoError, "The app data folder is unavailable.").with_details(e.to_string()))
+    crate::app_paths::data_dir(app).map(|d| d.join(sub))
 }
 
 fn emit_error(app: &AppHandle, job_id: &str, error: AppError) {

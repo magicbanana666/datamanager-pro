@@ -1,4 +1,6 @@
-import { BookOpen, LifeBuoy, MessageSquare, Plug, PlugZap } from "lucide-react";
+import { BookOpen, FolderOpen, LifeBuoy, MessageSquare, Plug, PlugZap } from "lucide-react";
+import { logsFolder } from "@/api/diagnostics";
+import { openFolder } from "@/api/transfer";
 import { Dialog } from "@/components/dialogs/Dialog";
 import { Button } from "@/components/controls/Button";
 import { Badge } from "@/components/controls/Badge";
@@ -20,25 +22,28 @@ export function HelpDialog() {
       <div className="flex flex-col gap-4">
         <div>
           <div className="text-[15px] font-semibold text-fg">DataManager Pro</div>
-          <div className="text-xs text-fg-muted">
-            Analyze. Migrate. Manage. Your Data. — v{appVersion} (Phase 2 - Read-Only Filesystem)
-          </div>
+          <div className="text-xs text-fg-muted">Analyze. Migrate. Manage. Your Data. — v{appVersion}</div>
         </div>
         <div className="flex flex-col gap-2 text-[13px] text-fg-muted">
           <div className="flex items-start gap-2.5">
             <BookOpen size={15} className="mt-0.5 shrink-0 text-accent" />
             <span>
-              Phase 2 can browse real drives, folders and files (read-only). Scans, transfers, sync, duplicate
-              detection and network/port scanning are still mock - no files are copied, moved, deleted, or written.
+              Scans, analysis, duplicates, comparison and search only read your files. Data Transfer, Sync, the Scheduler
+              and the delete/move actions write - only when you start them; deletions go to the Recycle Bin.
             </span>
           </div>
           <div className="flex items-start gap-2.5">
             <LifeBuoy size={15} className="mt-0.5 shrink-0 text-accent" />
-            <span>The high-performance recursive scanner and transfer/sync engines arrive in later phases (see ROADMAP.md).</span>
+            <span>An interrupted transfer can be resumed from Data Transfer. Scheduled tasks run while the app is open.</span>
           </div>
           <div className="flex items-start gap-2.5">
             <MessageSquare size={15} className="mt-0.5 shrink-0 text-accent" />
-            <span>Questions or feedback about this preview can be tracked alongside the project README.</span>
+            <span className="flex flex-wrap items-center gap-2">
+              Problems? The log files help:
+              <Button size="sm" icon={FolderOpen} onClick={() => logsFolder().then(openFolder).catch(() => {})}>
+                Open logs folder
+              </Button>
+            </span>
           </div>
         </div>
 

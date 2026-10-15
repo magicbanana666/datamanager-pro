@@ -13,6 +13,8 @@
 resume, see [PHASE6.md](./PHASE6.md)).
 **Phase 8 — Complete** (network shares, see [PHASE8.md](./PHASE8.md)).
 **Phase 9 — Complete** (scheduler and reports, see [PHASE9.md](./PHASE9.md)).
+**Phase 10 — Complete** (installer, portable, updates, hardening, see
+[PHASE10.md](./PHASE10.md)).
  The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
@@ -87,7 +89,9 @@ An in-app scheduler (runs while the app is open, clearly disclosed)
 that runs transfer and scan tasks, and real HTML/PDF/XLSX/CSV reports
 from the app's live results. See [PHASE9.md](./PHASE9.md).
 
-### Phase 10 — Installer, portable build, update system & production hardening
-MSI/NSIS installer via `tauri-bundler`, a portable single-exe build,
-an auto-update channel, code signing, crash reporting, and a pass over
-error handling/edge cases across every engine added in Phases 2-9.
+### ~~Phase 10 — Installer, portable build, update system & production hardening~~ ✅ Complete
+NSIS and MSI installers, a portable edition (data next to the exe), an
+auto-update channel via GitHub Releases with signed updates and a release
+workflow, crash reports and log files, single-instance, a capped scan
+cache, persistent settings and CI. Code signing needs a certificate and
+is documented, not configured. See [PHASE10.md](./PHASE10.md).

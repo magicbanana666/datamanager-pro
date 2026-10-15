@@ -9,6 +9,7 @@ import { Button } from "@/components/controls/Button";
 import { useUiStore } from "@/state/uiStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { toast } from "@/state/toastStore";
+import { useUpdateStore } from "@/state/updateStore";
 
 const SECTIONS = [
   { id: "general", label: "General" },
@@ -34,6 +35,7 @@ export function SettingsDialog() {
   const { settingsOpen, closeSettings } = useUiStore();
   const { settings, updateSection, reset } = useSettingsStore();
   const [section, setSection] = useState("general");
+  const updateStatus = useUpdateStore((s) => s.status);
 
   return (
     <Dialog
@@ -85,6 +87,14 @@ export function SettingsDialog() {
                 onChange={(v) => updateSection("general", { checkForUpdates: v })}
                 label="Check for updates on launch"
               />
+              <Button
+                size="sm"
+                className="self-start"
+                disabled={updateStatus === "checking" || updateStatus === "downloading"}
+                onClick={() => void useUpdateStore.getState().checkForUpdate(true)}
+              >
+                {updateStatus === "checking" ? "Checking..." : "Check for updates now"}
+              </Button>
             </div>
           </div>
         )}
