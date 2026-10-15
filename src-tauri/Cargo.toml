@@ -33,6 +33,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.12.0"
 ntfs = "0.4.0"
 xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+regex = "1.13.1"
+zip = { version = "9.0.3", default-features = false }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [

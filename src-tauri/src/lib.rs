@@ -25,6 +25,7 @@ use commands::filesystem::{
 use commands::scan::{
     analyze_subtree, cancel_scan, get_subtree, start_scan, ScanRegistry, ScanTreeCache,
 };
+use commands::search::{cancel_file_search, get_text_preview, open_path, start_file_search};
 use commands::storage::list_storage_volumes;
 use commands::system::{get_app_version, get_system_info, ping_backend};
 use commands::JobRegistry;
@@ -65,6 +66,10 @@ pub fn run() {
             cancel_duplicate_scan,
             start_comparison,
             cancel_comparison,
+            start_file_search,
+            cancel_file_search,
+            get_text_preview,
+            open_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

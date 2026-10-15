@@ -25,6 +25,7 @@ export type AppErrorCode =
   | "unsupported"
   | "networkUnavailable"
   | "volumeUnavailable"
+  | "invalidInput"
   | "unknown";
 
 export interface AppError {

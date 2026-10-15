@@ -1,6 +1,6 @@
 /**
- * Event subscription shared by the Phase 5 hash jobs (duplicate finder,
- * folder comparison): each emits `<prefix>-progress`, `-complete`,
+ * Event subscription shared by the Phase 5 jobs (duplicate finder,
+ * folder comparison, file search): each emits `<prefix>-progress`, `-complete`,
  * `-cancelled` and `-error`, filtered here to one job id. Await it
  * before starting the job with that id, so no event can be missed.
  */
@@ -16,7 +16,7 @@ export interface JobEventHandlers<TResult> {
 }
 
 export async function subscribeJobEvents<TResult extends { scanId: string }>(
-  prefix: "duplicate" | "comparison",
+  prefix: "duplicate" | "comparison" | "search",
   scanId: string,
   handlers: JobEventHandlers<TResult>,
 ): Promise<() => void> {

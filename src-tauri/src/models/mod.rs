@@ -14,6 +14,7 @@ pub mod errors;
 pub mod filesystem;
 pub mod hash_job;
 pub mod scan;
+pub mod search;
 pub mod storage;
 pub mod system;
 

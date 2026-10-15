@@ -10,6 +10,7 @@ pub mod comparison;
 pub mod duplicates;
 pub mod filesystem;
 pub mod scan;
+pub mod search;
 pub mod storage;
 pub mod system;
 
