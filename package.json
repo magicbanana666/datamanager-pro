@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "dev:admin": "pwsh -NoProfile -ExecutionPolicy Bypass -File scripts/dev-admin.ps1",
+    "dev:noadmin": "pwsh -NoProfile -Command \"$env:DMP_NO_ADMIN='1'; npm run tauri dev\""
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
