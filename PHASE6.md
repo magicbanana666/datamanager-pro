@@ -20,9 +20,11 @@ delete", the same machinery copy/move need.
    - A pre-flight check refuses to start when the destination lacks
      the space the plan needs (copies minus the files they replace).
    - Missing empty folders are created first.
-   - Files are copied on 4 threads, each through `<name>.dmp-part`,
+   - Files are copied in parallel (small files 8 at a time, large
+     ones depending on the storage - see *Copy engine performance*);
+     large files and replacements go through `<name>.dmp-part`,
      renamed into place only once complete (and verified, if asked) -
-     a destination file is never left half-written.
+     an existing destination file is never left half-written.
    - Deletions run **last** (Recycle Bin by default), so a failed copy
      never costs the only other copy of a file.
    - A move within one volume is a rename; otherwise copy, verify,
@@ -132,8 +134,10 @@ folders.
 
 ## Known limitations
 
-- Copies are file-by-file through `std::fs`, not `CopyFileEx`:
-  alternate data streams and EFS encryption aren't carried over.
+- Large files are copied with the app's own direct I/O, which copies
+  the main data stream only: alternate data streams and EFS encryption
+  aren't carried over for them (small files use `CopyFileExW`, which
+  does carry streams).
 - Long paths rely on Rust's automatic `\\?\` handling.
 - The Recycle Bin isn't available on network shares; deletions there
   fall back to permanent deletion for sync, and are refused for
