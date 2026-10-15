@@ -1,9 +1,6 @@
-//! One-shot file operations behind the result tables' actions (Phase 6):
-//! deleting selected files (Duplicate Finder, Compare Locations) and
-//! saving an export the user picked a location for (reports, CSV,
-//! saved comparisons). Copying/moving selected files goes through the
-//! transfer engine instead (`start_transfer` with `files`), for its
-//! progress, verification and journal.
+//! One-off file operations: delete, recycle, save exports, reveal in
+//! Explorer. Copy/move of selected files goes through the transfer
+//! engine (`start_transfer` with `files`).
 
 use super::blocking;
 use crate::models::errors::{AppError, AppErrorCode};
@@ -19,11 +16,9 @@ pub struct DeleteOutcome {
     pub errors: Vec<TransferError>,
 }
 
-/// Deletes files - never folders, so a stale or wrong path can't take a
-/// whole tree with it. To the Recycle Bin unless `use_recycle_bin` is
-/// false or the location has none (a network share), in which case the
-/// file is deleted for good only if `use_recycle_bin` is false;
-/// otherwise it's reported as an error and left alone.
+/// Deletes files, never folders. Uses the Recycle Bin when
+/// `use_recycle_bin` is set; where there is none (network shares) the
+/// file is reported and left alone.
 #[tauri::command]
 pub async fn delete_files(paths: Vec<String>, use_recycle_bin: bool) -> Result<DeleteOutcome, AppError> {
     blocking(move || {
@@ -52,8 +47,7 @@ pub async fn delete_files(paths: Vec<String>, use_recycle_bin: bool) -> Result<D
     .await
 }
 
-/// Writes `contents` to `path` - a location the user just chose in a
-/// native save dialog.
+/// Writes `contents` to a path chosen in a save dialog.
 #[tauri::command]
 pub async fn save_text_file(path: String, contents: String) -> Result<(), AppError> {
     blocking(move || {
@@ -91,9 +85,8 @@ pub fn reveal_in_explorer(path: String) -> Result<(), AppError> {
     Err(AppError::unsupported("Explorer is only available on Windows."))
 }
 
-/// Moves files or folders (with their contents) to the Recycle Bin - the
-/// right-click Delete. Never deletes permanently: a location without a
-/// Recycle Bin is reported instead.
+/// Moves files or folders to the Recycle Bin (context menu Delete).
+/// Never deletes permanently.
 #[tauri::command]
 pub async fn recycle_paths(paths: Vec<String>) -> Result<DeleteOutcome, AppError> {
     blocking(move || {

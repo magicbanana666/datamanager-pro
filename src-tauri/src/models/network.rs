@@ -1,6 +1,4 @@
-//! Data model for Phase 8: network shares (Network Analysis) and the
-//! network shares, mirroring `src/models/network.ts` on
-//! the frontend.
+//! Network share types. Mirrors `src/models/network.ts`.
 
 use serde::Serialize;
 

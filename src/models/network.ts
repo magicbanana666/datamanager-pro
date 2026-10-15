@@ -1,4 +1,4 @@
-/** Mirrors `src-tauri/src/models/network.rs` (Phase 8). */
+/** Mirrors `src-tauri/src/models/network.rs`. */
 export interface ShareConnection {
   server: string;
   share: string;

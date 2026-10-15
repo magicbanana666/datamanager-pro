@@ -125,7 +125,7 @@ export function FileSearchPage() {
     { id: "timeline", label: "Timeline" },
   ];
 
-  // The Preview tab reads the start of the selected (real) file.
+  // The Preview tab reads the start of the selected file.
   const previewPath = isReal && detailTab === "preview" ? selected?.hit?.path : undefined;
   useEffect(() => {
     if (!previewPath) return;

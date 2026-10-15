@@ -19,11 +19,8 @@ interface LocationPickerProps {
 
 type ValidationState = "idle" | "checking" | "valid" | "invalid";
 
-/** A folder/network path input with a real native folder picker
- * (`@tauri-apps/plugin-dialog`) and a live, debounced validity
- * indicator backed by the real `validate_path` command. Selecting or
- * typing a path only ever updates frontend state - no file operation
- * happens here. */
+/** Path input with a folder picker and a debounced validity check
+ * (`validate_path`). */
 export function LocationPicker({ value, onChange, network, placeholder, className, validate = true }: LocationPickerProps) {
   const [state, setState] = useState<ValidationState>("idle");
   const [result, setResult] = useState<PathValidation | null>(null);

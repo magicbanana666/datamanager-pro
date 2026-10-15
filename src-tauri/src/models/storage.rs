@@ -1,5 +1,4 @@
-//! Data shapes describing storage volumes (drives). Populated for real on
-//! Windows by `platform::windows`; see `services::storage_service`.
+//! Storage volume types.
 
 use serde::Serialize;
 
@@ -17,8 +16,7 @@ pub enum VolumeType {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StorageVolume {
-    /// Stable identifier for the volume (the mount point on Windows, e.g.
-    /// `"C:\\"`), suitable as a React list key.
+    /// The mount point, e.g. `"C:\\"`.
     pub id: String,
     pub name: String,
     pub mount_point: String,

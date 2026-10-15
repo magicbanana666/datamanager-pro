@@ -1,13 +1,7 @@
 /**
- * Real, backend-backed state for one Phase 3 recursive scan at a time.
- * Disk Analysis and Folder Analysis both use this store directly (like
- * `filesystemStore`, it's a single active session, not a
- * multi-instance cache) - only one scan runs from the UI at once, even
- * though the backend itself could technically track several.
- *
- * Every async step is self-contained here, the same style as
- * `filesystemStore`: components just call `start`/`cancel` and read
- * state back, never touching `api/scan.ts` or Tauri events directly.
+ * The current scan (one at a time), shared by Disk and Folder Analysis.
+ * Components call `start`/`cancel` and read the state; events are
+ * handled here.
  */
 import { create } from "zustand";
 import { cancelScan, generateScanId, getSubtree, startScan, subscribeScanEvents } from "@/api/scan";
@@ -21,9 +15,7 @@ export type ScanStatus = "idle" | "scanning" | "completed" | "cancelled" | "erro
 interface ScanState {
   status: ScanStatus;
   scanId: string | null;
-  /** What the current (or last) scan is scanning - lets a page that
-   * remounts mid-scan (navigating away and back) show the real target
-   * instead of resetting its location field to the default. */
+  /** Target of the current or last scan, so a remounted page shows it. */
   path: string | null;
   progress: ScanProgress | null;
   result: ScanResult | null;
@@ -42,8 +34,7 @@ interface ScanState {
 
 function createScanStore() {
   return create<ScanState>((set, get) => {
-    // Not part of the reactive state on purpose - components never need
-    // to read it, and it must survive a `set()` re-render untouched.
+    // Kept outside the reactive state.
     let unlisten: (() => void) | null = null;
 
     return {

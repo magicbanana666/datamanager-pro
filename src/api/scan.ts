@@ -1,13 +1,8 @@
 /**
- * Typed wrappers around the Phase 3 scan commands, plus a helper that
- * subscribes to one running scan's events and filters them down to
- * just that scan id (the backend broadcasts globally, since this app
- * only ever has one window).
+ * Scan commands, and a subscription to one scan's events.
  *
- * The scan id is generated *here*, not by the backend - see the doc
- * comment on `start_scan` in `src-tauri/src/commands/scan.rs` for why:
- * it lets `useScanStore` subscribe before the scan can possibly start
- * emitting, closing a race a backend-generated id can't.
+ * The scan id is generated here so the caller can subscribe before the
+ * scan starts emitting (see `start_scan` in `commands/scan.rs`).
  */
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";

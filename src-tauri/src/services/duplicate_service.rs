@@ -1,20 +1,10 @@
-//! The Phase 5 duplicate-detection engine.
+//! Duplicate detection.
 //!
-//! 1. **Collect** every file under each location with the regular scan
-//!    engines (`scan_service::run_scan` - MFT when possible, otherwise
-//!    the parallel walk), so finding candidates is as fast as a scan.
-//! 2. **Group** by the cheapest key that can rule pairs out: name or
-//!    size for the name/size criteria, and size first for exact
-//!    content - files of different sizes can't be identical, and on a
-//!    real drive most sizes are unique, so most files are never read.
-//! 3. For exact content only, **hash** what's left in two passes: the
-//!    first 64 KiB of each same-size candidate (cheap, and enough to
-//!    split almost every false candidate), then the full content of
-//!    whatever still matches. xxh3-128 - not cryptographic, but a
-//!    collision between two *different* files of the exact same size
-//!    and head is not a realistic risk for a cleanup tool.
-//!
-//! Read-only throughout: nothing here modifies, moves or deletes a file.
+//! 1. List all files with the scan engines.
+//! 2. Group by name or size. For exact content, size goes first: most
+//!    sizes are unique, so most files are never read.
+//! 3. Exact content only: hash the first 64 KiB of each candidate, then
+//!    the full content of what still matches (xxh3-128).
 
 use crate::models::duplicates::{
     DuplicateCriteria, DuplicateFile, DuplicateGroup, DuplicateOptions, MAX_GROUPS_IN_RESULT,
@@ -195,12 +185,9 @@ fn exact_groups(
     settled
 }
 
-/// Keeps one path per physical file. Two hard links to the same file
-/// aren't duplicates - deleting one frees nothing - and on a Windows
-/// system drive they'd otherwise dominate the results (most of
-/// `System32` is hard-linked into `WinSxS`; confirmed live, a
-/// `C:\Windows` run reported ~7.7 GB of "duplicates" that were almost
-/// entirely links). Files whose identity is unknown are all kept.
+/// Keeps one path per physical file. Hard links aren't duplicates
+/// (deleting one frees nothing), and most of System32 is hard-linked
+/// into WinSxS. Files with unknown identity are all kept.
 fn distinct_physical_files(mut members: Vec<Hashed>) -> Vec<DuplicateFile> {
     members.sort_by(|a, b| a.file.path.cmp(&b.file.path));
     let mut seen = HashSet::new();
@@ -310,7 +297,7 @@ mod tests {
         fs::hard_link(dir.path().join("original.bin"), dir.path().join("link.bin")).unwrap();
         assert!(run(dir.path(), DuplicateCriteria::Exact).is_empty());
 
-        // A real third copy still makes a group - of two distinct files.
+        // A separate third copy still makes a group of two files.
         fs::write(dir.path().join("copy.bin"), b"same bytes").unwrap();
         let groups = run(dir.path(), DuplicateCriteria::Exact);
         assert_eq!(groups.len(), 1);
@@ -332,7 +319,7 @@ mod tests {
         assert_eq!(outcome.files_compared, 1);
     }
 
-    /// Live timing against a real folder (`DUP_BENCH_PATH`, default
+    /// Timing against a folder (`DUP_BENCH_PATH`, default
     /// `C:\Windows`), exact content, files of 1 MB and up.
     #[test]
     #[ignore]

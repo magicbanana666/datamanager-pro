@@ -8,10 +8,8 @@ interface ProgressBarProps {
   showLabel?: boolean;
   height?: number;
   className?: string;
-  /** Renders a full-width, pulsing bar instead of one driven by
-   * `value` - for a real, in-progress operation with no cheap way to
-   * know a total ahead of time (e.g. a Phase 3 recursive scan, whose
-   * item count isn't known until it finishes). `value` is ignored. */
+  /** Pulsing bar for work without a known total (e.g. a scan).
+   * `value` is ignored. */
   indeterminate?: boolean;
 }
 

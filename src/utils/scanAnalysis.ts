@@ -1,11 +1,7 @@
 /**
- * Derives every analytical-tab dataset (file-type breakdown, top
- * files/folders, extension breakdown, modified-date timeline) from a
- * real (or mock) `FsNode` tree in one pass, so Disk Analysis/Folder
- * Analysis's tabs can show real numbers without a backend change -
- * Phase 3's `FsNode` already carries everything needed except
- * category, which stays a frontend concern per Phase 2/3's "backend
- * sends raw data" convention (see `models/scan.rs`'s doc comment).
+ * Analysis tab data (file types, top files and folders, extensions,
+ * modified-date timeline) from an `FsNode` tree, plus extension
+ * categorization.
  */
 import type { CategoryStat, FileTypeCategoryId, FsNode } from "@/models/common";
 import { FILE_TYPE_CATEGORIES } from "@/models/common";
@@ -79,11 +75,8 @@ export function timelineBucketLabel(lastModified: string | null, now: number): s
 const TOP_N = 10;
 const TOP_EXTENSIONS = 9;
 
-/** Raw aggregates a tree walk produces - exactly the shape the
- * backend's `analyze_subtree` command returns (see
- * `src-tauri/src/services/scan_analysis_service.rs`), so a real
- * scan's analysis (computed backend-side, against the full cached
- * tree) and mock data's (computed here) share `finalizeAnalysis`. */
+/** Raw aggregates; the same shape `analyze_subtree` returns, so both
+ * go through `finalizeAnalysis`. */
 export interface RawScanAnalysis {
   /** Every extension seen, lowercased with its dot; `""` for none. */
   extensions: { extension: string; files: number; size: number }[];
@@ -93,11 +86,9 @@ export interface RawScanAnalysis {
 }
 
 /**
- * Single recursive pass over `node`, producing every raw aggregate at
- * once. Only accurate for a tree the frontend holds in full - i.e.
- * Phase 1 mock data. A real scan arrives depth-truncated (see
- * `TRANSPORT_DEPTH` in `src-tauri/src/models/scan.rs`), so real scans
- * are analyzed by the backend instead - see `useScanAnalysis`.
+ * All raw aggregates in one pass over `node`. Only correct for a
+ * complete tree; scan results are trimmed, so those are analyzed by the
+ * backend (see `useScanAnalysis`).
  */
 export function analyzeTreeRaw(node: FsNode): RawScanAnalysis {
   const now = Date.now();
@@ -119,9 +110,7 @@ export function analyzeTreeRaw(node: FsNode): RawScanAnalysis {
 
       files.push({ name: n.name, path: n.path, size: n.size });
     } else {
-      // A folder/drive node - root itself is excluded from "top
-      // folders" (matching the original mock lists, which never
-      // included the scanned root as one of its own top entries).
+      // The root itself isn't a "top folder".
       if (!isRoot) folders.push({ path: n.path, size: n.size });
       for (const child of n.children ?? []) visit(child, false);
     }
@@ -196,13 +185,8 @@ export function analyzeTree(node: FsNode): ScanAnalysis {
   return finalizeAnalysis(analyzeTreeRaw(node));
 }
 
-/**
- * Direct (non-recursive) children of `children`, largest `n` plus an
- * "Others" bucket for the rest - what Folder Analysis's "Size
- * Distribution" donut actually shows (its mock labels are child
- * names: Clients/Product/Archive/Others), as opposed to
- * `analyzeTree`'s recursive, extension-based category breakdown.
- */
+/** The `n` largest children plus an "Others" bucket, for the Size
+ * Distribution donut. */
 export function topChildrenWithOthers(children: FsNode[], n: number): CategoryStat[] {
   const sorted = [...children].sort((a, b) => b.size - a.size);
   const top = sorted.slice(0, n);

@@ -1,4 +1,4 @@
-/** Mirrors `src-tauri/src/models/reports.rs` (Phase 9). */
+/** Mirrors `src-tauri/src/models/reports.rs`. */
 export type ReportCategory =
   | "Disk Analysis"
   | "Folder Analysis"

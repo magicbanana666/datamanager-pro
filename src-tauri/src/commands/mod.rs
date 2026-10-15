@@ -1,9 +1,5 @@
-//! Tauri command handlers, grouped by feature area.
-//!
-//! `system`, `filesystem`, `storage`, `scan`, `search`, `comparison` and
-//! `duplicates` are read-only. `transfer` and `fileops` (Phase 6/7)
-//! modify files, only on explicit user action. `network` (Phase 8) is
-//! read-only too; `scheduler` remains a placeholder.
+//! Tauri command handlers, grouped by feature area. Only `transfer` and
+//! `fileops` modify files.
 
 pub mod comparison;
 pub mod duplicates;
@@ -22,10 +18,8 @@ pub mod transfer;
 
 use crate::models::errors::{AppError, AppErrorCode};
 
-/// Runs `f` on Tokio's blocking thread pool so a slow filesystem call
-/// (a large directory, a stalled network share) can't freeze the UI
-/// thread, and maps a task panic to a safe [`AppError`] instead of
-/// propagating it.
+/// Runs `f` on the blocking pool so slow I/O (large folders, stalled
+/// shares) doesn't hold up the async runtime. A panic becomes an [`AppError`].
 pub(crate) async fn blocking<T, F>(f: F) -> Result<T, AppError>
 where
     F: FnOnce() -> Result<T, AppError> + Send + 'static,
@@ -43,9 +37,8 @@ where
     }
 }
 
-/// Every running Phase 5 hash job (duplicate finder, folder comparison),
-/// keyed by its frontend-generated id - so each feature's cancel command
-/// can find its run. A run is removed once it reports its outcome.
+/// Running hash jobs (duplicate finder, comparison) by frontend job id,
+/// so cancel commands can find them. Removed once the job finishes.
 #[derive(Default)]
 pub struct JobRegistry {
     jobs: std::sync::Mutex<
@@ -75,10 +68,8 @@ impl JobRegistry {
     }
 }
 
-/// Runs `work` on the blocking pool while emitting `progress_event`
-/// (a `HashJobProgress`) every 150ms, then deregisters the job. The
-/// caller turns the returned outcome into its own complete/cancelled/
-/// error events. A task panic comes back as `Err`.
+/// Runs `work` on the blocking pool, emitting `progress_event` every
+/// 150 ms, then deregisters the job. A panic comes back as `Err`.
 pub(crate) async fn run_hash_job<T: Send + 'static>(
     app: &tauri::AppHandle,
     progress_event: &str,

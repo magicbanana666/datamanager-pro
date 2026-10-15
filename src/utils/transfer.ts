@@ -1,4 +1,4 @@
-/** Labels and helpers for Phase 6/7 transfer plans. */
+/** Labels and helpers for transfer plans. */
 import type { PlanAction } from "@/models/transfer";
 import type { StatusTone } from "@/utils/colors";
 

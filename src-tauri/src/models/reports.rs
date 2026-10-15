@@ -1,7 +1,5 @@
-//! Data model for Phase 9 reports, mirroring `src/models/reports.ts`.
-//! The frontend assembles a [`ReportDocument`] from the real results it
-//! holds (scan, duplicates, comparison, search, transfers, scheduler);
-//! the backend renders it to HTML, PDF, XLSX or CSV.
+//! Report types. Mirrors `src/models/reports.ts`. The frontend builds a
+//! [`ReportDocument`]; the backend renders it to HTML, PDF, XLSX or CSV.
 
 use serde::{Deserialize, Serialize};
 

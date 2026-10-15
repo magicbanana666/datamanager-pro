@@ -1,3 +1,2 @@
-/** Sync / Incremental's modes - the matching `TransferMode` values the
- * Phase 7 engine runs (see `src/models/transfer.ts`). */
+/** Sync modes; the same values as in `TransferMode`. */
 export type SyncMode = "mirror" | "incremental" | "update-newer" | "two-way";

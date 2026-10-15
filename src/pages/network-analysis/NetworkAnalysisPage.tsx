@@ -318,8 +318,7 @@ export function NetworkAnalysisPage() {
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-      {/* auto-rows-fr: see the identical comment in DiskAnalysisPage.tsx
-          (PHASE4.md) - without it the Treemap's measured height is 0. */}
+      {/* auto-rows-fr: without it the treemap's measured height is 0. */}
       {/* min-h: in a small window the page scrolls rather than the
           treemap/results collapsing to nothing. */}
       <div className="grid min-h-[300px] flex-1 auto-rows-fr grid-cols-[1fr_280px] gap-3 2xl:grid-cols-[1fr_300px]">
@@ -561,7 +560,7 @@ export function NetworkAnalysisPage() {
         </div>
       </div>
 
-      {/* flex-none: see the identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md). */}
+      {/* flex-none keeps the fixed height inside the flex column. */}
       <Card title="Folders" padded={false} bodyClassName="h-[200px] flex-none">
         <DataTable
           columns={columns}

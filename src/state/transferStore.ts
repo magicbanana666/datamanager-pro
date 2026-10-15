@@ -1,10 +1,8 @@
 /**
- * Global state for one Phase 6/7 transfer job at a time, per feature:
- * `useTransferStore` (Data Transfer), `useSyncStore` (Sync /
- * Incremental) and `useFileActionStore` (copy/move/delete actions from
- * Duplicate Finder and Compare Locations). Global so a running transfer
- * - and its log and report - survive navigating away; terminal states
- * are toasted (and after-completion actions run) from here.
+ * One transfer job at a time per feature: `useTransferStore` (Data
+ * Transfer), `useSyncStore` (Sync) and `useFileActionStore` (file
+ * actions from Duplicate Finder and Compare). Global so jobs survive
+ * page changes; end states and after-completion actions are handled here.
  */
 import { create } from "zustand";
 import { toAppError } from "@/api/backend";

@@ -1,12 +1,9 @@
-//! Data model for the Phase 6/7 transfer engine (copy, move, and the
-//! mirror/incremental/update-newer/two-way sync modes), mirroring
-//! `src/models/transfer.ts` and `src/models/sync.ts` on the frontend.
+//! Transfer types (copy, move and the sync modes). Mirrors
+//! `src/models/transfer.ts` and `src/models/sync.ts`.
 //!
-//! A transfer runs in two steps: **analyze** lists both sides and builds
-//! a [`TransferPlan`] (one [`PlanItem`] per file/folder with the action
-//! it will get), then **execute** carries out the included items. Data
-//! Transfer runs both back to back; Sync / Incremental shows the plan
-//! first so items can be excluded and conflicts resolved.
+//! A transfer is analyzed into a [`TransferPlan`] (one [`PlanItem`] per
+//! file or folder), then executed. Data Transfer does both at once; Sync
+//! shows the plan first so items can be excluded and conflicts resolved.
 
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};

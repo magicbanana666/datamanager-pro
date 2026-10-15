@@ -1,15 +1,10 @@
-//! The Phase 9 scheduler: an in-app runner, not Windows Task Scheduler.
-//! Tasks only run **while DataManager Pro is open** (the Scheduler page
-//! says so). Every 20 s the runner starts enabled tasks whose next run
-//! has come; at startup, runs missed while the app was closed are either
-//! run once or recorded as missed (a setting).
+//! In-app scheduler (not Windows Task Scheduler): tasks only run while
+//! the app is open. Every 20 s due tasks are started; runs missed while
+//! the app was closed are run once at startup or recorded as missed.
 //!
-//! Sync/Copy/Move/Mirror tasks run through the transfer engine
-//! (`transfer::run_headless`: journaled, resumable, cancellable with
-//! `cancel_transfer`, progress under the task's job id); Analyze tasks
-//! run the scan engine. Every change is persisted and announced with a
-//! `scheduler-changed` event; a finished run also emits
-//! `scheduler-run-finished`.
+//! Copy/Move/Sync/Mirror tasks use `transfer::run_headless`, Analyze
+//! tasks the scanner. Changes emit `scheduler-changed`; finished runs
+//! emit `scheduler-run-finished`.
 
 use crate::models::errors::{AppError, AppErrorCode};
 use crate::models::scan::{ScanOptions, ScanProgressState};

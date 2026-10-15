@@ -1,45 +1,19 @@
-//! Best-effort MFT-based fast scanning on NTFS volumes, using the
-//! [`ntfs`](https://github.com/ColinFinck/ntfs) crate (ColinFinck) - a
-//! real, maintained, read-only NTFS parser, not a hand-rolled one.
+//! Fast scanning of local NTFS volumes by reading the MFT directly.
 //!
-//! Every $FILE_NAME attribute NTFS stores already carries a cached
-//! copy of its file's size/allocated-size/timestamps/attributes (kept
-//! in sync by the filesystem specifically so directory listings are
-//! fast) - so this engine reads only directory index records, never
-//! opening or `stat`-ing individual files the way
-//! `services::scan_service`'s walk engine must. That's the entire
-//! source of its speed, and also why it's inherently single-reader
-//! (one `Read + Seek` handle over the raw volume): unlike the walk
-//! engine it does not parallelize. "Multithreaded" (per the Phase 3
-//! brief) is satisfied by the walk engine; see `PHASE3.md`.
+//! Two strategies:
+//! - Folder scans walk directory indexes with the
+//!   [`ntfs`](https://github.com/ColinFinck/ntfs) crate. Index entries
+//!   carry each file's size, times and attributes, so files are never
+//!   opened.
+//! - Whole-drive scans read the entire `$MFT` in one go and parse the
+//!   records in parallel (`bulk_scan_via_mft`).
 //!
-//! **A sequential-by-record-number rewrite was attempted and reverted
-//! live** (see git history / PHASE3.md's Known Limitations) - reading
-//! every one of a volume's ~750K File Records via `Ntfs::file()`
-//! turned out far slower than this directory-index approach, not
-//! faster: `Ntfs::file()` re-resolves the `$MFT`'s own `$DATA` run
-//! list on *every single call* (see its doc comment in the `ntfs`
-//! crate source), and calling it once per record (rather than once per
-//! *folder*, as this module does) multiplied that redundant work by
-//! roughly the file-to-folder ratio - about 5-6x more calls, each one
-//! now also missing the locality this module's per-folder traversal
-//! still has via a live directory (its records tend to be closer
-//! together than the volume-wide scatter of "record N, then record
-//! N+1" implies once the $MFT itself is at all fragmented). Getting
-//! genuinely closer to WizTree's speed needs reading the raw $MFT into
-//! memory once and parsing records directly from that buffer, bypassing
-//! per-record `Ntfs::file()` calls entirely - `NtfsFile::new` is
-//! `pub(crate)`-only in this crate version, so that needs either a
-//! lower-level hand-rolled parser or an upstream API addition, not
-//! attempted here.
+//! Note: calling `Ntfs::file()` per record is much slower than walking
+//! the indexes, because it re-resolves the `$MFT` data runs on every call.
 //!
-//! Opening a raw volume handle (`\\.\C:`) requires admin/backup
-//! privilege. `try_mft_scan` is designed to fail cleanly and cheaply
-//! at the very first step when that privilege is absent, a path is a
-//! UNC share, or the volume isn't NTFS - every failure here is
-//! silent from the user's perspective; the caller
-//! (`services::scan_service::run_scan`) automatically retries with the
-//! walk engine.
+//! Opening `\\.\C:` needs admin rights. Without them, for UNC paths or
+//! non-NTFS volumes `try_mft_scan` fails early and the caller falls back
+//! to the directory walk.
 
 use crate::models::scan::{FsNode, NodeKind, ScanOptions, ScanProgressState};
 use crate::utils::path::normalize_path;
@@ -126,15 +100,12 @@ impl<R: Read + Seek> Seek for SectorReader<R> {
     }
 }
 
-/// Sector alignment used for all raw-volume reads - deliberately a
-/// safe multiple of every real-world Windows sector size (512 or
-/// 4096 bytes), matching the `ntfs` crate's own example.
+/// Alignment for raw volume reads; a multiple of both 512 and 4096 byte
+/// sectors.
 const VOLUME_SECTOR_SIZE: u64 = 4096;
 
-/// `BufReader` capacity used only by `bulk_scan_via_mft`'s one long
-/// sequential `$MFT` read - a multiple of `VOLUME_SECTOR_SIZE` so every
-/// refill stays sector-aligned. 4 MiB keeps syscall count low without
-/// holding an unreasonable amount of memory mid-read.
+/// Read buffer for the sequential `$MFT` read in `bulk_scan_via_mft`.
+/// Must be a multiple of `VOLUME_SECTOR_SIZE`.
 const BULK_READ_BUFFER_SIZE: usize = 4 * 1024 * 1024;
 
 fn drive_letter_of(normalized: &str) -> Option<char> {
@@ -146,10 +117,7 @@ fn drive_letter_of(normalized: &str) -> Option<char> {
     }
 }
 
-/// Converts an NTFS timestamp (100-nanosecond intervals since
-/// 1601-01-01) to the same UTC ISO 8601 format every other backend
-/// timestamp uses, reusing `utils::time::system_time_to_iso8601`
-/// rather than a second formatting implementation.
+/// NTFS timestamp (100 ns ticks since 1601) to ISO 8601 UTC.
 fn ntfs_time_to_iso8601(t: NtfsTime) -> Option<String> {
     const EPOCH_DIFFERENCE_IN_INTERVALS: u64 = 116_444_736_000_000_000;
     let unix_intervals = t
@@ -179,29 +147,14 @@ fn empty_folder(path: String, name: String) -> FsNode {
     }
 }
 
-/// Attempts a full MFT-based scan of `root_path`. Returns `Err` (a
-/// human-readable reason, logged but never shown to the user) for
-/// every case the walk engine should handle instead: a UNC path, no
-/// privilege to open the raw volume, a non-NTFS volume, or any parse
-/// failure partway through.
+/// Scans `root_path` from the MFT. `Err` (logged, not shown) means the
+/// caller should use the directory walk: UNC path, no admin rights,
+/// not NTFS, or a parse error.
 ///
-/// **Dispatches to one of two genuinely different engines**, since
-/// neither is a universal win - confirmed with direct, live timing
-/// against this repo's own machine (see `PHASE3.md`'s bulk-$MFT-read
-/// section for the numbers):
-/// - A whole-drive scan (`root_path` is a bare drive root, e.g. `C:\`)
-///   goes to [`bulk_scan_via_mft`]: one bulk read of the entire `$MFT`
-///   plus in-memory parsing, ~5-9x faster than the walk below at that
-///   scale (measured: a live ~1.04M-file `C:\` in ~19s vs ~174s) -
-///   because a whole-drive scan touches a large fraction of the $MFT
-///   anyway, so reading all of it once is strictly less work than
-///   `entries.len()`-many separate directory-index B+tree lookups.
-/// - Anything narrower (a specific folder, the common case for Folder
-///   Analysis) keeps using [`build_node`]'s per-folder directory-index
-///   walk below: the bulk read's cost is roughly *fixed* (dominated by
-///   the $MFT's own total size, not the target's), so for a small
-///   target it's dramatically worse, not better (measured: a ~560-file
-///   folder took ~16s via the bulk path against ~0.17s here).
+/// Drive roots use [`bulk_scan_via_mft`] (C:\ with ~1M files: ~19 s
+/// instead of ~174 s). Its cost depends on the size of the whole MFT,
+/// so folders use the per-folder index walk in [`build_node`] instead
+/// (a 560-file folder: 0.17 s vs 16 s in bulk).
 pub fn try_mft_scan(
     root_path: &str,
     options: ScanOptions,
@@ -214,9 +167,7 @@ pub fn try_mft_scan(
     walk_index_scan(&normalized, options, state)
 }
 
-/// The original, per-folder directory-index-based engine - see
-/// `try_mft_scan`'s doc comment for when this runs instead of the bulk
-/// path.
+/// Per-folder directory index scan (see `try_mft_scan`).
 fn walk_index_scan(
     normalized: &str,
     options: ScanOptions,
@@ -236,10 +187,8 @@ fn walk_index_scan(
     let mut ntfs = Ntfs::new(&mut fs).map_err(|e| e.to_string())?;
     ntfs.read_upcase_table(&mut fs).map_err(|e| e.to_string())?;
 
-    // Walk from the volume root down to the requested path's own
-    // NtfsFile, resolving one path component at a time via the
-    // directory index (case-insensitively, matching Windows
-    // semantics).
+    // Resolve the path one component at a time from the volume root
+    // (case-insensitive).
     let mut current = ntfs.root_directory(&mut fs).map_err(|e| e.to_string())?;
     let relative = &normalized[2..]; // strip the leading "X:"
     for component in relative.split('\\').filter(|c| !c.is_empty()) {
@@ -274,11 +223,9 @@ fn walk_index_scan(
     Ok(root)
 }
 
-/// Recursively builds an `FsNode` from an NTFS directory's index -
-/// single-threaded by construction (one `fs` handle). Every
-/// size/allocated/timestamp value for a *file* leaf comes straight out
-/// of its parent's cached $FILE_NAME record; only directories need a
-/// further `to_file` + `directory_index` call to recurse.
+/// Builds an `FsNode` from a directory's index (single-threaded, one
+/// volume handle). File sizes and times come from the index entries;
+/// only subdirectories are opened.
 fn build_node<T: Read + Seek>(
     ntfs: &Ntfs,
     fs: &mut T,
@@ -302,11 +249,8 @@ fn build_node<T: Read + Seek>(
         let Some(key) = entry.key() else { continue };
         let file_name: NtfsFileName = key.map_err(|e| e.to_string())?;
 
-        // A file with an auto-generated 8.3 short name gets *two*
-        // $FILE_NAME attributes (and so two index entries): one Win32,
-        // one Dos. Skip the redundant Dos-only entry so it isn't
-        // counted twice; `Win32AndDos` (a name that's already
-        // 8.3-compatible, so it only ever got one attribute) is kept.
+        // Files with a generated 8.3 name have a second, Dos-only entry.
+        // Skip it so the file isn't counted twice.
         if file_name.namespace() == NtfsFileNamespace::Dos {
             continue;
         }
@@ -333,9 +277,7 @@ fn build_node<T: Read + Seek>(
                 options,
                 state,
             )?;
-            // The recursive call can't see its own $FILE_NAME record
-            // (that lives in *this* directory's index, not the child's
-            // own file record) - attach the timestamp read above.
+            // The child's timestamp is in this directory's index entry.
             node.last_modified = last_modified;
             state.folders.fetch_add(1, Ordering::Relaxed);
             children.push(node);
@@ -401,10 +343,8 @@ fn build_node<T: Read + Seek>(
         file_count,
         folder_count,
         percent_of_parent: 100.0,
-        // Set by `try_mft_scan` for the true root (it has access to
-        // the starting NtfsFile's own $STANDARD_INFORMATION); a
-        // subdirectory's own modification time is set by its parent
-        // from the cached $FILE_NAME record instead, one level up.
+        // Filled in by the caller (the parent's index entry, or
+        // $STANDARD_INFORMATION for the root).
         last_modified: None,
         category: None,
         children: Some(children),
@@ -412,30 +352,14 @@ fn build_node<T: Read + Seek>(
 }
 
 // ---------------------------------------------------------------------
-// Bulk $MFT read - a second, experimental fast path.
+// Bulk $MFT read, used for whole-drive scans.
 //
-// `try_mft_scan`/`build_node` above still cost one `directory_index` +
-// B+tree lookup per folder (via the `ntfs` crate's safe, high-level
-// API). That's already far cheaper than `Ntfs::file()` per record (see
-// this module's top doc comment on the reverted rewrite), but it's
-// still `entries.len()`-many separate index walks rather than one pass.
-//
-// What follows instead reads the *entire* `$MFT` data stream into
-// memory with a single bulk read (the one and only `Ntfs::file()` call
-// this path makes - record 0, the $MFT's own record), then hand-parses
-// every fixed-size File Record directly out of that in-memory buffer:
-// no further disk I/O, no further crate-level per-record calls, for
-// the rest of the scan. This is the same overall shape WizTree itself
-// is understood to use. It's additive and unused by `try_mft_scan` so
-// far - see the `#[ignore]`-gated test below for direct, UI-free
-// validation (`cargo test bulk_mft -- --ignored --nocapture`) before
-// it's ever wired into the production path, given how badly the first
-// rewrite attempt at this same goal went.
+// Reads the whole `$MFT` into memory in one sequential read and parses
+// the fixed-size File Records from that buffer, instead of one index
+// walk per folder.
 // ---------------------------------------------------------------------
 
-/// One `$FILE_NAME` attribute parsed directly out of a raw, fixed-up
-/// File Record buffer - everything `build_node` needs for one child
-/// entry, without ever constructing a crate-level `NtfsFile` for it.
+/// A `$FILE_NAME` attribute parsed from a raw File Record.
 struct RawFileName {
     parent_record_number: u64,
     name: String,
@@ -447,15 +371,9 @@ struct RawFileName {
     is_system: bool,
 }
 
-/// Applies the NTFS Update Sequence Array "fixup" to one raw File
-/// Record's bytes, in place - hand-rolled reimplementation of the
-/// `ntfs` crate's private `Record::fixup()` (see its `record.rs`),
-/// needed here because this path never constructs the crate's own
-/// `NtfsFile`/`Record` types at all. `None` means "not a valid,
-/// consistent record" (wrong signature, corrupt/torn mid-write, or a
-/// record too small to hold the array it claims) - always treated as
-/// "skip this record", never fatal to the overall bulk scan, the same
-/// tolerance a live, changing filesystem needs in general.
+/// Applies the Update Sequence Array fixup to a raw File Record in
+/// place (the `ntfs` crate's version is private). `None` for an invalid
+/// or torn record, which the caller skips.
 fn apply_fixup(record: &mut [u8]) -> Option<()> {
     const SECTOR_SIZE: usize = 512;
     const U16_SIZE: usize = 2;
@@ -482,9 +400,8 @@ fn apply_fixup(record: &mut [u8]) -> Option<()> {
         let array_pos = array_start + i * U16_SIZE;
         let sector_pos = i * SECTOR_SIZE + SECTOR_SIZE - U16_SIZE;
         let new_bytes = [record[array_pos], record[array_pos + 1]];
-        // The 2 bytes at the end of each sector should currently hold
-        // the Update Sequence Number - if they don't, this sector was
-        // caught mid-write and the record can't be trusted.
+        // Each sector must end with the Update Sequence Number, otherwise
+        // the record was caught mid-write.
         if record[sector_pos] != usn[0] || record[sector_pos + 1] != usn[1] {
             return None;
         }
@@ -494,10 +411,8 @@ fn apply_fixup(record: &mut [u8]) -> Option<()> {
     Some(())
 }
 
-/// Parses the 66-byte `$FILE_NAME` header (offsets confirmed against
-/// the `ntfs` crate's own `FileNameHeader`/`structured_values::mod`
-/// source) plus its variable-length UTF-16LE name directly out of a
-/// resident attribute's raw value bytes.
+/// Parses a resident `$FILE_NAME` value: the 66-byte header and the
+/// UTF-16LE name.
 fn parse_file_name_value(v: &[u8]) -> Option<RawFileName> {
     const HEADER_SIZE: usize = 66;
     if v.len() < HEADER_SIZE {
@@ -513,9 +428,7 @@ fn parse_file_name_value(v: &[u8]) -> Option<RawFileName> {
     let name_length = v[64] as usize;
     let namespace = v[65];
 
-    // Same policy as `build_node`: a Dos-only 8.3 shadow name is a
-    // duplicate index entry for a file already represented by its
-    // Win32 (or Win32AndDos) name - skip it so it isn't double-counted.
+    // Skip Dos-only 8.3 names, as in `build_node`.
     if namespace == NtfsFileNamespace::Dos as u8 {
         return None;
     }
@@ -544,10 +457,7 @@ fn parse_file_name_value(v: &[u8]) -> Option<RawFileName> {
     })
 }
 
-/// One record's contribution to `bulk_parse_mft`'s pass 1, tagged with
-/// its resolved owner (true base-record) number - the `Send`-able unit
-/// each parallel record-parsing task in that pass produces, merged into
-/// the shared maps afterwards in a plain sequential loop.
+/// Pass 1 output for one record, keyed by its base record number.
 struct RecordResult {
     owner_record_number: u64,
     direct_data: Option<(u64, u64)>,
@@ -555,33 +465,21 @@ struct RecordResult {
     file_names: Vec<RawFileName>,
 }
 
-/// Everything `bulk_parse_mft`'s single attribute-list walk over one
-/// record can determine about it in isolation - some of it (`external_data_refs`)
-/// needs a second pass over *other* records before it can be resolved.
+/// What can be read from one record on its own.
 struct ParsedRecord {
     file_names: Vec<RawFileName>,
-    /// The record's own unnamed `$DATA` attribute's (size, allocated),
-    /// when present directly in this record.
+    /// (size, allocated) of the unnamed `$DATA`, if in this record.
     direct_data: Option<(u64, u64)>,
-    /// Record numbers this record's (resident) `$ATTRIBUTE_LIST` says
-    /// hold its unnamed `$DATA` attribute *instead* - populated only
-    /// when `direct_data` is `None` and an `$ATTRIBUTE_LIST` pointing
-    /// elsewhere for type `0x80` was found. See `bulk_parse_mft`'s doc
-    /// comment for why this needs a second pass.
+    /// Extension records that hold the `$DATA` instead, per the
+    /// `$ATTRIBUTE_LIST`. Resolved in pass 2.
     external_data_refs: Vec<u64>,
 }
 
-/// Reads a File Record's unnamed `$DATA` attribute's (size, allocated)
-/// directly, if this specific record physically holds one - shared by
-/// `parse_record`'s main attribute walk and pass 2's extension-record
-/// lookups in `bulk_parse_mft`, since both need exactly the same
-/// resident-vs-non-resident `$DATA` header math.
+/// (size, allocated) of the record's unnamed `$DATA` attribute, if the
+/// record holds it.
 fn read_direct_data_size(record: &[u8], offset: usize, is_non_resident: u8) -> Option<(u64, u64)> {
     if is_non_resident == 0 && offset + 20 <= record.len() {
-        // Resident $DATA: the value length *is* the exact size (see
-        // `NtfsFileName::allocated_size`'s own doc comment on this
-        // convention) - always small (a record is at most ~1-4 KB),
-        // so `size == allocated` here.
+        // Resident: the value length is the size (and the allocation).
         let value_length = u32::from_le_bytes([
             record[offset + 16],
             record[offset + 17],
@@ -590,10 +488,7 @@ fn read_direct_data_size(record: &[u8], offset: usize, is_non_resident: u8) -> O
         ]) as u64;
         Some((value_length, value_length))
     } else if is_non_resident == 1 && offset + 56 <= record.len() {
-        // NtfsNonResidentAttributeHeader: allocated_size @ +40, data_size
-        // @ +48 (both u64) - present right in this header regardless of
-        // how many (or how fragmented) data runs back the value, so this
-        // needs no data-run resolution at all.
+        // Non-resident header: allocated_size at +40, data_size at +48.
         let allocated_size =
             u64::from_le_bytes(record[offset + 40..offset + 48].try_into().unwrap());
         let data_size = u64::from_le_bytes(record[offset + 48..offset + 56].try_into().unwrap());
@@ -603,28 +498,13 @@ fn read_direct_data_size(record: &[u8], offset: usize, is_non_resident: u8) -> O
     }
 }
 
-/// Walks one already fixed-up File Record's attribute list (raw byte
-/// offsets, matching `NtfsAttributeHeader`/`NtfsResidentAttributeHeader`
-/// in the `ntfs` crate source), returning every resident `$FILE_NAME`
-/// (type `0x30`) it finds plus whatever it can determine about the
-/// record's unnamed `$DATA` size. A record with its `IN_USE` header
-/// flag clear is skipped entirely (empty result) - a deleted-but-not-
-/// yet-reallocated record still physically exists in the $MFT and must
-/// not show up as a live file.
+/// Parses a fixed-up File Record: its resident `$FILE_NAME` attributes
+/// and, if present, the unnamed `$DATA` size. Records not marked
+/// `IN_USE` (deleted files) return nothing.
 ///
-/// **Size comes from `$DATA`, never from `$FILE_NAME`'s own cached
-/// size fields.** Confirmed live against a real `C:\Windows\WinSxS`
-/// scan: a meaningful number of real system files (`msedge.dll` among
-/// them, at 263 MB) have a **stale, zeroed** cached size in their own
-/// record's `$FILE_NAME` attribute, even though the *parent
-/// directory's index* holds an up-to-date copy of that same structure
-/// (`build_node`'s directory-index path reads that copy instead, which
-/// is why it doesn't hit this). NTFS is only documented to keep
-/// `$FILE_NAME`'s cached fields in sync "when the file name changes"
-/// (see the `ntfs` crate's own doc comments on
-/// `NtfsFileName::data_size`/`allocated_size`) - evidently that sync
-/// doesn't always reach a record's *own* copy for files written via
-/// low-level servicing paths (WinSxS component deployment, here).
+/// The size in a record's own `$FILE_NAME` can be stale; NTFS only
+/// updates it on rename. Some WinSxS files (e.g. msedge.dll) show 0
+/// there, so `$DATA` is used when available.
 fn parse_record(record: &[u8]) -> ParsedRecord {
     const FILE_NAME_TYPE: u32 = 0x30;
     const DATA_TYPE: u32 = 0x80;
@@ -633,10 +513,9 @@ fn parse_record(record: &[u8]) -> ParsedRecord {
     const FLAGS_OFFSET: usize = 22;
     const FIRST_ATTR_OFFSET_OFFSET: usize = 20;
     const IN_USE: u16 = 0x0001;
-    /// Size of one `AttributeListEntryHeader` (see the `ntfs` crate's
-    /// `structured_values/attribute_list.rs`): ty(4) + list_entry_length(2)
-    /// + name_length(1) + name_offset(1) + lowest_vcn(8) + base_file_reference(8)
-    /// + instance(2).
+    /// Size of an attribute list entry header: type (4), length (2),
+    /// name length (1), name offset (1), lowest VCN (8), file
+    /// reference (8), instance (2).
     const ATTR_LIST_ENTRY_SIZE: usize = 26;
 
     let mut file_names = Vec::new();
@@ -680,9 +559,7 @@ fn parse_record(record: &[u8]) -> ParsedRecord {
             record[offset + 6],
             record[offset + 7],
         ]) as usize;
-        // A zero or overflowing length would loop forever / panic on
-        // slicing - treat either as "this record's attribute list is
-        // corrupt, stop reading it" rather than trusting it further.
+        // Corrupt length: stop reading this record.
         if length < 16 || offset + length > record.len() {
             break;
         }
@@ -712,17 +589,10 @@ fn parse_record(record: &[u8]) -> ParsedRecord {
         } else if ty == DATA_TYPE && name_length == 0 && direct_data.is_none() {
             direct_data = read_direct_data_size(record, offset, is_non_resident);
         } else if ty == ATTRIBUTE_LIST_TYPE && is_non_resident == 0 && offset + 22 <= record.len() {
-            // A resident $ATTRIBUTE_LIST: when this record's own $DATA
-            // wasn't found directly above, it may have been relocated
-            // to an extension record referenced here (heavily
-            // fragmented files - a live, actively-growing registry
-            // hive was the case that surfaced this: its $DATA didn't
-            // fit as a single resident/non-resident attribute in the
-            // base record at all). A *non-resident* $ATTRIBUTE_LIST
-            // (rare - only for pathologically large attribute lists)
-            // isn't followed here; such a record keeps whatever
-            // `$FILE_NAME` cached as a fallback rather than this path
-            // failing to report a size at all.
+            // Resident $ATTRIBUTE_LIST: $DATA may be in an extension
+            // record (fragmented files such as registry hives).
+            // Non-resident lists are rare and not followed; those files
+            // keep the $FILE_NAME size.
             let value_length = u32::from_le_bytes([
                 record[offset + 16],
                 record[offset + 17],
@@ -773,10 +643,7 @@ fn parse_record(record: &[u8]) -> ParsedRecord {
     }
 }
 
-/// Reads the entire `$MFT` data stream into memory in one bulk read -
-/// the only per-scan use of `Ntfs::file()` this fast path makes.
-/// Everything else is parsed straight out of the returned buffer with
-/// no further disk I/O.
+/// Reads the whole `$MFT` data stream into memory.
 fn bulk_read_mft_data<T: Read + Seek>(ntfs: &Ntfs, fs: &mut T) -> Result<Vec<u8>, String> {
     let mft_file = ntfs.file(fs, 0).map_err(|e| e.to_string())?;
     let data_item = mft_file
@@ -791,51 +658,22 @@ fn bulk_read_mft_data<T: Read + Seek>(ntfs: &Ntfs, fs: &mut T) -> Result<Vec<u8>
     Ok(buf)
 }
 
-/// Byte offset (within a fixed-up File Record) of the `base_file_record`
-/// field in `FileRecordHeader` - see `ntfs` crate's `file.rs`. All zero
-/// there means "this record is a base record, not an extension of
-/// another one".
+/// Offset of `base_file_record` in the File Record header; zero for a
+/// base record.
 const BASE_FILE_RECORD_OFFSET: usize = 32;
 
-/// Fixes up and parses every File Record in a bulk-read `$MFT` buffer
-/// (mutated in place, record by record - no extra copy of the ~hundreds
-/// of MB a real volume's $MFT can be), returning every parsed
-/// `$FILE_NAME` grouped by the record number of the parent directory
-/// it lives in. Building the whole tree afterwards is then pure
-/// in-memory map lookups (see `build_node_from_map`) - zero further
-/// disk I/O.
+/// Fixes up (in place) and parses every record in a bulk-read `$MFT`,
+/// returning the `$FILE_NAME`s grouped by parent record number. The
+/// tree is then built from this map without further I/O.
 ///
-/// **Base vs. extension records**: when a File Record has more
-/// attributes than fit in one record (typically many `$FILE_NAME`
-/// entries from heavy hard-linking, or a heavily fragmented `$DATA` -
-/// WinSxS/the Driver Store and actively-growing system files like the
-/// registry hives are all full of this), NTFS moves some of them into
-/// separate *extension* records and references those via a
-/// `$ATTRIBUTE_LIST` attribute in the original (*base*) record. This
-/// module handles two distinct consequences of that, confirmed via two
-/// separate live `C:\Windows`/`C:\Windows\WinSxS` scans each turning
-/// up a real example:
-///
-/// 1. An extension record still has its own record number, but it has
-///    no identity of its own as a parent - every child's
-///    `parent_directory_reference` always names the *base* record. So
-///    a directory whose own `$FILE_NAME` happens to be one of the
-///    attributes that got relocated must still be keyed by its base
-///    record's number below, not the extension record's - otherwise
-///    its children (correctly keyed by the base number) are never
-///    found under it. That's what every record's own `base_file_record`
-///    header field is for (handled in pass 1, below).
-/// 2. A file's `$DATA` attribute itself can be the thing that got
-///    relocated (e.g. `C:\Windows\System32\config\SOFTWARE`, confirmed
-///    live: its base record has no `$DATA` at all, only a resident
-///    `$ATTRIBUTE_LIST` pointing to two *different* extension records
-///    for it). Resolving this needs a second pass, since the target
-///    extension record can be scanned before or after the record
-///    referencing it - pass 1 only collects candidates
-///    (`ParsedRecord::external_data_refs`); pass 2 (which runs after
-///    every record has already been fixed up) resolves them by jumping
-///    straight to those specific records, already sitting fixed-up in
-///    `data`.
+/// Records with many attributes (hard links, fragmented files) spill
+/// into extension records, referenced from the base record's
+/// `$ATTRIBUTE_LIST`. Two cases to handle:
+/// 1. Children always reference the base record, so a `$FILE_NAME`
+///    found in an extension record is keyed by its `base_file_record`.
+/// 2. `$DATA` can live in an extension record (e.g. registry hives).
+///    Pass 1 collects those references, pass 2 resolves them once all
+///    records are fixed up.
 fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u64, RawFileName)>> {
     let mut children_by_parent: HashMap<u64, Vec<(u64, RawFileName)>> = HashMap::new();
     let record_size = file_record_size as usize;
@@ -846,18 +684,9 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
     let mut authoritative_sizes: HashMap<u64, (u64, u64)> = HashMap::new();
     let mut pending_data_lookup: HashMap<u64, Vec<u64>> = HashMap::new();
 
-    // Pass 1: fixup every record once, collect $FILE_NAMEs (grouped by
-    // parent, tagged with their owning record's true base-record
-    // number), and every record's own $DATA size when directly present.
-    //
-    // Each record's fixup+parse is fully independent of every other -
-    // the only shared state is the three maps being built, so this runs
-    // in parallel across records (`rayon`, already a dependency for the
-    // walk engine) and merges into those maps in a cheap sequential pass
-    // afterwards. Confirmed live this is where nearly all of this
-    // function's time goes (per-record byte parsing over ~1M+ records
-    // on a full `C:\`, not I/O) - see PHASE3.md's bulk-$MFT-read
-    // section for the before/after numbers.
+    // Pass 1: fix up and parse every record (in parallel, records are
+    // independent), then merge into the maps sequentially. Most of the
+    // time goes here, not in I/O.
     let per_record_results: Vec<RecordResult> = data
         .par_chunks_exact_mut(record_size)
         .enumerate()
@@ -912,10 +741,7 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
         }
     }
 
-    // Pass 2: resolve every owner whose $DATA wasn't found directly in
-    // its own record by jumping straight to the extension record(s)
-    // its $ATTRIBUTE_LIST named - every record in `data` is already
-    // fixed up by now, so this is pure in-memory slicing, no I/O.
+    // Pass 2: look up $DATA in the extension records found in pass 1.
     for (owner, candidates) in &pending_data_lookup {
         if authoritative_sizes.contains_key(owner) {
             continue;
@@ -931,9 +757,7 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
             if candidate_record.len() < 42 {
                 continue;
             }
-            // Already fixed up in pass 1 - just walk its attributes
-            // directly for a $DATA this time (no need to re-derive
-            // file names or follow further attribute lists here).
+            // Already fixed up in pass 1.
             let parsed = parse_record(candidate_record);
             if let Some(sz) = parsed.direct_data {
                 authoritative_sizes.insert(*owner, sz);
@@ -942,23 +766,10 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
         }
     }
 
-    // Pass 3: reconcile each file's $FILE_NAME-cached size with $DATA's,
-    // taking the larger of the two rather than unconditionally trusting
-    // $DATA - confirmed live via a full `C:\` scan that *both*
-    // directions of staleness are real, for different reasons:
-    //   - $FILE_NAME reads 0 while $DATA has the truth: WinSxS/servicing
-    //     files like `msedge.dll` (see this function's own doc comment).
-    //   - $DATA reads 0 while $FILE_NAME has the truth: OneDrive "Files
-    //     On-Demand" cloud placeholders (multi-GB files with nothing
-    //     materialized locally yet - `$DATA`'s cached size is 0/tiny,
-    //     but $FILE_NAME correctly carries the full logical size, which
-    //     is what a disk-usage tool's users expect to see, matching
-    //     Explorer/WizTree).
-    // Taking the max is the safe direction to be wrong in when these
-    // two legitimate sources disagree: understating a real file's size
-    // as 0 is a far worse failure mode for this tool than occasionally
-    // overstating a since-shrunk file by using a stale-but-larger
-    // cached value.
+    // Pass 3: use the larger of the $FILE_NAME and $DATA sizes. Either
+    // can be 0 when the other is right: $FILE_NAME for some WinSxS files,
+    // $DATA for OneDrive online-only files (which should show their full
+    // size, like Explorer does).
     for entries in children_by_parent.values_mut() {
         for (owner, fname) in entries.iter_mut() {
             if !fname.is_directory {
@@ -973,18 +784,11 @@ fn bulk_parse_mft(data: &mut [u8], file_record_size: u32) -> HashMap<u64, Vec<(u
     children_by_parent
 }
 
-/// Safety valve against a corrupt/cyclic parent chain in the bulk map
-/// (can't happen on a healthy volume, but this path trusts raw bytes
-/// with no filesystem-level consistency checking) - matches
-/// `Treemap.tsx`'s own `MAX_DEPTH`-style reasoning: a real folder tree
-/// is never anywhere close to this deep.
+/// Guards against cycles from a corrupt MFT.
 const BULK_MAX_DEPTH: u32 = 4096;
 
-/// Builds an `FsNode` for `record_number` purely from the in-memory
-/// parent->children map produced by `bulk_parse_mft` - the bulk-read
-/// analogue of `build_node`, with the same skip/hidden/system/cancel
-/// semantics, but no `fs`/`ntfs` parameter at all since it touches the
-/// disk exactly zero times.
+/// Builds the `FsNode` for `record_number` from the `bulk_parse_mft`
+/// map. Same filtering and cancel handling as `build_node`.
 fn build_node_from_map(
     record_number: u64,
     path: String,
@@ -999,15 +803,7 @@ fn build_node_from_map(
     }
     state.set_current_path(&path);
 
-    // Every child is independent of its siblings (a directory child's
-    // own recursive call only ever reads `map`, never touches another
-    // sibling's output) - `state`'s counters are already atomics for
-    // exactly this reason (the walk engine's rayon-parallel recursion
-    // needs the same thing). Parallelizing here, not just in
-    // `bulk_parse_mft`'s pass 1, is what let a real full `C:\` scan's
-    // wall-clock time actually benefit from this machine's cores rather
-    // than just its (already fast) record-parsing step - confirmed live,
-    // see PHASE3.md.
+    // Siblings are independent, so build them in parallel.
     let mut children: Vec<FsNode> = match map.get(&record_number) {
         Some(entries) => entries
             .par_iter()
@@ -1099,11 +895,9 @@ fn build_node_from_map(
     }
 }
 
-/// Experimental bulk-$MFT-read scan - same public shape as
-/// `try_mft_scan`, not yet called from it. Resolves the starting
-/// directory the same cheap way (a handful of directory-index lookups
-/// for the path's own components), then reads+parses the entire $MFT
-/// once and builds the whole tree from that in-memory map.
+/// Whole-drive scan: resolves the start folder through the directory
+/// index, then reads and parses the entire `$MFT` and builds the tree
+/// from memory.
 pub fn bulk_scan_via_mft(
     root_path: &str,
     options: ScanOptions,
@@ -1118,11 +912,7 @@ pub fn bulk_scan_via_mft(
     let file = File::open(&volume_path)
         .map_err(|e| format!("cannot open raw volume {volume_path}: {e}"))?;
     let sector_reader = SectorReader::new(file, VOLUME_SECTOR_SIZE);
-    // A much bigger buffer than the small-scattered-lookup `walk_index_scan`
-    // needs: this path's one long sequential read (`bulk_read_mft_data`,
-    // below) benefits directly - each `BufReader` refill becomes one big
-    // aligned read through `SectorReader` instead of many small ones,
-    // cutting the read's own syscall count roughly proportionally.
+    // Large buffer: one long sequential read, fewer syscalls.
     let mut fs = BufReader::with_capacity(BULK_READ_BUFFER_SIZE, sector_reader);
 
     let mut ntfs = Ntfs::new(&mut fs).map_err(|e| e.to_string())?;
@@ -1168,21 +958,10 @@ mod bulk_mft_tests {
     use crate::models::scan::MAX_CHILDREN_PER_NODE;
     use std::time::Instant;
 
-    /// Direct, UI-free timing/correctness check for the bulk-$MFT-read
-    /// path against a real local volume - run explicitly with
-    /// `cargo test bulk_mft -- --ignored --nocapture` (needs an
-    /// elevated/backup-privileged shell to open `\\.\C:`, so it's
-    /// `#[ignore]`-gated rather than part of the normal `cargo test`
-    /// gate). Compares wall-clock time and file/folder/byte totals
-    /// directly against the existing, known-good `try_mft_scan`
-    /// directory-index path on the same folder, so a mismatch in
-    /// counts (not just slowness) fails loudly before this is ever
-    /// considered for wiring into production.
-    /// Narrower diagnostic: picks a handful of second-level folders
-    /// under `MFT_BENCH_PATH` and compares the bulk map's child count
-    /// for each against a fresh, live `directory_index()` walk of that
-    /// exact same folder - much cheaper per run than the full-tree
-    /// comparison above, to localize *where* counts diverge.
+    /// Compares child counts of some second-level folders under
+    /// `MFT_BENCH_PATH` between the bulk map and a directory index walk.
+    /// Needs an elevated shell:
+    /// `cargo test bulk_mft -- --ignored --nocapture`.
     #[test]
     #[ignore]
     fn bulk_mft_diagnose_level2_divergence() {
@@ -1220,7 +999,7 @@ mod bulk_mft_tests {
         let root_entries = map.get(&root_record_number).unwrap_or(&empty);
         println!("root direct children (map): {}", root_entries.len());
 
-        // Live, direct listing of the root itself for comparison.
+        // List the root directly for comparison.
         let live_index = current.directory_index(&mut fs).expect("directory_index");
         let mut live_iter = live_index.entries();
         let mut live_root_count = 0u64;
@@ -1244,7 +1023,7 @@ mod bulk_mft_tests {
             checked += 1;
             let map_count = map.get(child_record_number).map(|v| v.len()).unwrap_or(0) as u64;
 
-            // Live walk of this exact child folder.
+            // Index walk of this child.
             let index = current.directory_index(&mut fs).expect("directory_index");
             let mut finder = index.finder();
             let entry = NtfsFileNameIndex::find(&mut finder, &ntfs, &mut fs, &fname.name);
@@ -1291,12 +1070,8 @@ mod bulk_mft_tests {
         }
     }
 
-    /// Dumps every attribute (raw type/length, and every `$FILE_NAME`'s
-    /// parent/size/namespace) found across a specific file's base
-    /// record plus any `$ATTRIBUTE_LIST`-referenced extension records -
-    /// used to pin down exactly why `msedge.dll` (and similar heavily
-    /// hard-linked WinSxS files) got a `size=0` `$FILE_NAME` picked up
-    /// by the bulk path. Target file path via `MFT_BENCH_FILE`.
+    /// Dumps all attributes of one file's base and extension records
+    /// (`MFT_BENCH_FILE`), for debugging size mismatches.
     #[test]
     #[ignore]
     fn bulk_mft_dump_one_file_record() {
@@ -1451,11 +1226,8 @@ mod bulk_mft_tests {
         dump_record(&mut data, file_record_size, target_record_number, "target");
     }
 
-    /// Confirms `truncate_for_transport` actually shrinks the
-    /// *serialized* tree for a real, huge target - by depth and by
-    /// breadth - while the cached full tree stays complete. Prints the
-    /// full tree's size next to the JSON payload a `scan-complete`
-    /// event would actually carry, the thing that froze the webview live.
+    /// Prints the full tree size next to the trimmed `scan-complete`
+    /// payload size for a large target.
     #[test]
     #[ignore]
     fn bulk_mft_capped_payload_size() {
@@ -1510,12 +1282,8 @@ mod bulk_mft_tests {
         assert_eq!(transport.file_count, root.file_count);
     }
 
-    /// Two back-to-back bulk-only runs, minutes apart only by however
-    /// long each bulk read itself takes (well under the ~114s the full
-    /// bulk-vs-index comparison needs) - establishes how much of the
-    /// count divergence seen against the (much slower) index scan is
-    /// just live filesystem churn on an actively-written target like
-    /// `C:\Windows`, versus a bug in the bulk path itself.
+    /// Two bulk scans back to back, to measure how much the counts
+    /// change between runs on a busy volume.
     #[test]
     #[ignore]
     fn bulk_mft_self_consistency() {
@@ -1571,11 +1339,8 @@ mod bulk_mft_tests {
             index_elapsed, index.file_count, index.folder_count, index.size
         );
 
-        // Loose tolerance, not exact equality: the two scans run
-        // sequentially against a live, changing volume, so a handful
-        // of files/folders created or deleted in between (temp files,
-        // browser caches, etc.) is expected on a real C:\Windows, not
-        // a bug in either path.
+        // The volume changes between the two scans (temp files, caches),
+        // so allow a small difference.
         let file_diff = bulk.file_count.abs_diff(index.file_count);
         let folder_diff = bulk.folder_count.abs_diff(index.folder_count);
         let max_allowed = (index.file_count + index.folder_count) / 200 + 50; // ~0.5% + slack

@@ -16,10 +16,8 @@ export interface UseSimulatedProgressResult {
 }
 
 /**
- * Frontend-only fake progress simulator used by every "Start Scan" /
- * "Start Transfer" / "Start Sync" button in Phase 1. Ticks `progress` from
- * 0 -> 100 over `durationSeconds` using a plain interval timer - no real
- * disk, network or filesystem work happens anywhere near this hook.
+ * Timer-driven progress from 0 to 100 over `durationSeconds`, for the
+ * IP / Port Scanner demo. Does no actual work.
  */
 export function useSimulatedProgress(onComplete?: () => void): UseSimulatedProgressResult {
   const [status, setStatus] = useState<SimStatus>("idle");

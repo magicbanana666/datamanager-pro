@@ -1,13 +1,7 @@
-//! Tauri commands for the Phase 5 file search - same streaming shape as
-//! `commands::duplicates`:
+//! File search commands.
 //!
-//! - `search-progress` - roughly every 150ms while running.
-//! - `search-complete` - once, carrying the `SearchResult`.
-//! - `search-cancelled` - once, instead, after `cancel_file_search`.
-//! - `search-error` - only if the task itself panics.
-//!
-//! Plus two small file actions for the results panel:
-//! `get_text_preview` and `open_path`.
+//! Events: `search-progress` (every 150 ms), then one of
+//! `search-complete`, `search-cancelled` or `search-error`.
 
 use super::duplicates::{validate_folders, CancelledPayload, ErrorPayload};
 use super::{blocking, run_hash_job, JobRegistry};
@@ -21,8 +15,7 @@ use std::time::Instant;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 
-/// Rejects synchronously for an invalid location or query (empty, bad
-/// regex, nothing to match against), so the user sees why right away.
+/// Fails immediately on a bad location or query (empty, invalid regex).
 #[tauri::command]
 pub async fn start_file_search(
     app: AppHandle,
@@ -114,9 +107,8 @@ async fn run_and_report(
     }
 }
 
-/// The first 16 KiB of a file as text, for the results panel's Preview
-/// tab - `None` for a file that looks binary (a NUL byte), rather than
-/// rendering garbage.
+/// The first 16 KiB of a file for the Preview tab; `None` if it looks
+/// binary.
 #[tauri::command]
 pub async fn get_text_preview(path: String) -> Result<Option<String>, AppError> {
     blocking(move || {
@@ -129,9 +121,8 @@ pub async fn get_text_preview(path: String) -> Result<Option<String>, AppError> 
     .await
 }
 
-/// Opens a file with its default application. Done backend-side so the
-/// webview needs no broad "open any path" permission; only paths that
-/// exist as files are accepted.
+/// Opens an existing file with its default application. Done here so
+/// the webview doesn't need a broad opener permission.
 #[tauri::command]
 pub fn open_path(app: AppHandle, path: String) -> Result<(), AppError> {
     if !std::path::Path::new(&path).is_file() {

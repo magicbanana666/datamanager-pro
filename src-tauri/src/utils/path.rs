@@ -1,10 +1,4 @@
-//! Path normalization and classification helpers shared by
-//! `path_service` and the filesystem commands.
-//!
-//! These are pure string/`Path` functions with no I/O, which is what
-//! makes them cheap to unit test thoroughly (see the `tests` module
-//! below) - none of them touch the filesystem or panic on malformed
-//! input; malformed input just normalizes as best-effort.
+//! Path normalization and classification. Pure string functions, no I/O.
 
 /// True if `path` is a UNC path (`\\server\share...` or the `//`
 /// slash-forward equivalent a user might type).
@@ -12,26 +6,19 @@ pub fn is_unc(path: &str) -> bool {
     path.starts_with(r"\\") || path.starts_with("//")
 }
 
-/// True if `path` is a bare drive reference with no trailing separator,
-/// e.g. `C:` or `d:`. Windows treats this as "current directory on that
-/// drive", which is almost never what a folder picker / path field means
-/// - `normalize_path` turns this into the drive *root* (`C:\`).
+/// True for a bare drive like `C:`, which Windows reads as "current
+/// directory on that drive". `normalize_path` turns it into `C:\`.
 fn is_bare_drive(path: &str) -> bool {
     let bytes = path.as_bytes();
     bytes.len() == 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
-/// Normalizes a user- or frontend-supplied path into a canonical
-/// Windows-style string, without touching the filesystem:
+/// Normalizes a path string without touching the disk:
 ///
-/// - accepts `/` or `\` as separators and converts to `\`
-/// - preserves the UNC `\\server\share` prefix (never collapses it to a
-///   single backslash)
-/// - collapses duplicate interior separators
-/// - strips a trailing separator, *except* it preserves the trailing
-///   backslash on a bare drive root (`C:` -> `C:\`, `C:\` stays `C:\`)
-///   since dropping it there would change the path's meaning
-/// - is a pure string transform: it never fails, panics, or touches disk
+/// - `/` becomes `\`
+/// - keeps the UNC `\\` prefix
+/// - collapses repeated separators
+/// - strips a trailing separator, except on drive roots (`C:` -> `C:\`)
 pub fn normalize_path(input: &str) -> String {
     let trimmed = input.trim();
     if trimmed.is_empty() {
@@ -39,8 +26,7 @@ pub fn normalize_path(input: &str) -> String {
     }
 
     let unc = is_unc(trimmed);
-    // Convert separators, but keep track of the UNC double-prefix so we
-    // don't accidentally collapse it while deduplicating below.
+    // Convert separators; remember the UNC prefix so it isn't collapsed.
     let slashes_converted: String = trimmed
         .chars()
         .map(|c| if c == '/' { '\\' } else { c })
@@ -67,8 +53,7 @@ pub fn normalize_path(input: &str) -> String {
         }
     }
 
-    // Strip a single trailing separator (the loop above already
-    // collapsed runs of them to one).
+    // Strip the trailing separator.
     if collapsed.ends_with('\\') {
         collapsed.pop();
     }
@@ -83,9 +68,7 @@ pub fn normalize_path(input: &str) -> String {
         return result;
     }
 
-    // A bare drive letter (`C:`) means "current directory on that
-    // drive" to Win32 - normalize it to the drive root instead, which
-    // is what every caller in this app actually means.
+    // `C:` -> `C:\`.
     if is_bare_drive(&result) {
         result.push('\\');
     }

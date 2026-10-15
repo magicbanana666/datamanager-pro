@@ -29,15 +29,14 @@ export const useToastStore = create<ToastState>((set) => ({
   dismiss: (id) => set((s) => ({ toasts: s.toasts.filter((x) => x.id !== id) })),
 }));
 
-/** Fire-and-forget helpers usable from anywhere - components, mock hooks,
- * or plain callbacks - without needing to be inside a React render. */
+/** Toast helpers usable outside React components. */
 export const toast = {
   info: (message: string, title?: string) => useToastStore.getState().push({ message, title, tone: "info" }),
   success: (message: string, title?: string) => useToastStore.getState().push({ message, title, tone: "success" }),
   warning: (message: string, title?: string) => useToastStore.getState().push({ message, title, tone: "warning" }),
   danger: (message: string, title?: string) => useToastStore.getState().push({ message, title, tone: "danger" }),
-  /** The standard Phase 1 "not wired up yet" notice for toolbar/action buttons. */
-  demo: (message = "Phase 1 Demo Mode — this action is not connected to the backend yet.") =>
+  /** Notice for actions that aren't available yet. */
+  demo: (message = "Demo only: this action isn't available yet.") =>
     useToastStore.getState().push({ message, tone: "warning", title: "Demo Mode" }),
   /** The Duplicate Finder / destructive-action specific wording from the spec. */
   demoNoFilesModified: () =>

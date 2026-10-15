@@ -1,17 +1,14 @@
-//! Tauri commands for the Phase 6/7 transfer engine (Data Transfer and
-//! Sync / Incremental). A job is identified by a frontend-generated id
-//! and streams:
+//! Transfer commands (Data Transfer, Sync).
 //!
-//! - `transfer-progress` - roughly every 150ms while analyzing/executing.
-//! - `transfer-planned` - once analysis is done, carrying the plan.
-//! - `transfer-complete` - once execution is done, carrying the report.
-//! - `transfer-cancelled` - instead, after `cancel_transfer`
-//!   (`resumable: true` when a journal was kept).
-//! - `transfer-error` - a failed pre-flight check or a task panic.
+//! Events per job id:
+//! - `transfer-progress` every 150 ms
+//! - `transfer-planned` with the plan
+//! - `transfer-complete` with the report
+//! - `transfer-cancelled` (`resumable` if a journal was kept)
+//! - `transfer-error` for a failed pre-flight check or a panic
 //!
-//! `start_transfer` analyzes and, with `execute: true`, carries the plan
-//! out straight away; otherwise the plan waits in the registry for
-//! `execute_transfer` (with the user's per-item overrides) or
+//! `start_transfer` analyzes, and with `execute: true` runs the plan
+//! right away. Otherwise the plan waits for `execute_transfer` or
 //! `discard_transfer`.
 
 use crate::models::errors::{AppError, AppErrorCode};
@@ -36,8 +33,7 @@ struct Job {
     plan: Mutex<Option<(TransferRequest, Vec<PlanItem>, PlanSummary)>>,
 }
 
-/// Every transfer that is analyzing, planned (waiting for
-/// `execute_transfer`) or executing.
+/// Transfers that are analyzing, planned or executing.
 #[derive(Default)]
 pub struct TransferRegistry {
     jobs: Mutex<HashMap<String, Arc<Job>>>,
@@ -231,8 +227,8 @@ pub async fn execute_transfer(app: AppHandle, job_id: String, overrides: Vec<Ite
     Ok(())
 }
 
-/// A conflict (or any item) redirected by the user: the size follows the
-/// copy that's being transferred.
+/// Applies the user's choice for an item; the size follows the side
+/// being copied.
 fn resolve(mut item: PlanItem, action: PlanAction) -> PlanItem {
     item.action = action;
     if matches!(action, PlanAction::CopyBack | PlanAction::UpdateBack) {
@@ -343,9 +339,9 @@ pub fn discard_interrupted_transfer(app: AppHandle, job_id: String) -> Result<()
             };
             let _ = std::fs::remove_file(format!("{target}{}", transfer_service::PART_SUFFIX));
         }
-        // Small new files are copied straight to their final name: one
-        // the job didn't finish may be half-written. Removed only while
-        // its source still exists, so a finished move is never undone.
+        // Small new files are written to their final name, so an
+        // unfinished one may be incomplete. Only removed while the source
+        // still exists, so a completed move is never undone.
         for item in header.items.iter().filter(|i| {
             !progress.done.contains(&i.id)
                 && matches!(i.action, PlanAction::CopyNew | PlanAction::CopyBack)
@@ -386,8 +382,8 @@ async fn run_execution(
     }
 }
 
-/// Executes a job and returns its report (`None` when cancelled) without
-/// emitting the terminal event - shared by the UI flow and the scheduler.
+/// Executes a job and returns its report (`None` if cancelled). Used by
+/// both the UI and the scheduler; emits no final event.
 async fn execute_job(
     app: &AppHandle,
     job_id: &str,
@@ -398,7 +394,7 @@ async fn execute_job(
     resumed: Option<(Journal, JournalProgress)>,
 ) -> Result<Option<TransferReport>, AppError> {
     let is_resume = resumed.is_some();
-    // Pre-flight: refuse rather than fail halfway on a full disk.
+    // Don't start a job that would run out of space halfway.
     if !is_resume {
         if let Some(free) = summary.dest_free_bytes {
             if summary.net_bytes_needed > free {
@@ -495,8 +491,7 @@ async fn execute_job(
 }
 
 /// Runs `work` on the blocking pool, emitting `transfer-progress` every
-/// 150ms (with the speed over the last ~2 seconds) and once more at the
-/// end, so the final item updates and log lines aren't lost.
+/// 150 ms (speed over the last 2 s) and once more at the end.
 async fn with_progress<T: Send + 'static>(
     app: &AppHandle,
     job_id: &str,
@@ -552,8 +547,7 @@ async fn with_progress<T: Send + 'static>(
     outcome
 }
 
-/// Starts a Windows shutdown in 60 seconds ("Shut down computer" after
-/// a transfer) - `cancel_shutdown` (or `shutdown /a`) aborts it.
+/// Shuts Windows down in 60 s; `cancel_shutdown` aborts it.
 #[tauri::command]
 pub fn schedule_shutdown() -> Result<(), AppError> {
     run_shutdown(&["/s", "/t", "60", "/c", "DataManager Pro: the transfer is complete - shutting down in 60 seconds."])
@@ -576,8 +570,7 @@ fn run_shutdown(args: &[&str]) -> Result<(), AppError> {
     }
 }
 
-/// Opens a folder in Explorer ("Open destination folder" after a
-/// transfer).
+/// Opens a folder in Explorer.
 #[tauri::command]
 pub fn open_folder(app: AppHandle, path: String) -> Result<(), AppError> {
     use tauri_plugin_opener::OpenerExt;
@@ -589,10 +582,8 @@ pub fn open_folder(app: AppHandle, path: String) -> Result<(), AppError> {
         .map_err(|e| AppError::new(AppErrorCode::IoError, "Could not open the folder.").with_details(e.to_string()))
 }
 
-/// Analyzes and executes `request` with no page driving it (the
-/// scheduler). Progress events still go out under `job_id`, and
-/// `cancel_transfer` works on it; the outcome is returned instead of
-/// emitted. With `keep_log`, the full log comes back too.
+/// Analyzes and executes `request` without a page (scheduler). Progress
+/// is still emitted and `cancel_transfer` works; the outcome is returned.
 pub(crate) async fn run_headless(
     app: &AppHandle,
     job_id: &str,

@@ -1,12 +1,4 @@
-//! Data shapes shared by Tauri commands.
-//!
-//! `errors`, `filesystem` and `storage` back the Phase 2 read-only
-//! filesystem API. `scan` backs the Phase 3 recursive scanner. `system`
-//! holds both the Phase 1 diagnostic types and the real `SystemInfo`
-//! added in Phase 2. `network`, `scheduler` and `transfer` remain
-//! documented, empty placeholders reserved for later phases so the
-//! module layout doesn't need to change when real network scanning,
-//! scheduling and transfer engines are added.
+//! Types exchanged with the frontend. Most mirror a file in `src/models/`.
 
 pub mod comparison;
 pub mod duplicates;

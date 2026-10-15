@@ -1,17 +1,7 @@
-//! Windows-specific storage APIs that have no equivalent in
-//! `std::fs`: volume enumeration (`GetLogicalDrives`), volume metadata
-//! (`GetVolumeInformationW`, `GetDriveTypeW`), free/total space
-//! (`GetDiskFreeSpaceExW`), and on-disk allocation size
-//! (`GetCompressedFileSizeW` + cluster rounding via `GetDiskFreeSpaceW`).
-//! `mft` (Phase 3) adds best-effort raw-MFT scanning via the `ntfs`
-//! crate - kept in its own submodule since it's a different kind of
-//! Windows-specific code (a raw volume parser, not a handful of Win32
-//! calls) but re-exported from here so `platform::current` stays one
-//! flat surface.
-//!
-//! Everything here is read-only: every Win32 call used is a query, never
-//! a mutation. Kept isolated in this module (per the Phase 2 brief) so
-//! the rest of the crate never touches `windows::Win32` directly.
+//! Windows implementation: volumes, volume info, free space and on-disk
+//! (allocated) sizes. Submodules cover MFT scanning, direct I/O copies,
+//! file operations and networking. The rest of the crate doesn't use
+//! `windows::Win32` directly.
 
 pub mod directio;
 mod fileops;
@@ -234,13 +224,10 @@ const ON_DISK_SIZE_MAY_DIFFER: u32 = FILE_ATTRIBUTE_COMPRESSED
     | 0x0004_0000 // FILE_ATTRIBUTE_RECALL_ON_OPEN
     | 0x0040_0000; // FILE_ATTRIBUTE_RECALL_ON_DATA_ACCESS
 
-/// [`allocated_size_bytes`] for a scan's hot loop: same result, but
-/// takes the volume's cluster size precomputed once per scan (see
-/// [`cluster_size_bytes`]) and the entry's already-read metadata, and
-/// only calls `GetCompressedFileSizeW` when the file's attributes say
-/// its on-disk size can actually differ. Confirmed live this matters:
-/// the per-file `GetCompressedFileSizeW` + `GetDiskFreeSpaceW` pair was
-/// ~2 extra syscalls on each of ~930K files in a full `C:\` walk scan.
+/// [`allocated_size_bytes`] for the scan loop: uses a cluster size
+/// computed once per scan and the metadata already read, and only calls
+/// `GetCompressedFileSizeW` when the attributes require it. Saves two
+/// syscalls per file (~930K files on a typical C:\).
 pub fn allocated_size_for_scan(
     path: &Path,
     metadata: &std::fs::Metadata,
@@ -346,7 +333,7 @@ pub fn decode_attributes(metadata: &std::fs::Metadata) -> Vec<FileAttribute> {
 /// The physical identity of an open file - volume serial number plus
 /// NTFS file index - so two paths that are hard links to the same file
 /// (Windows links most of `System32` into `WinSxS`, for instance) can
-/// be told apart from two genuinely separate copies. `None` if the
+/// be told apart from separate copies. `None` if the
 /// filesystem doesn't report one.
 pub fn file_identity(file: &std::fs::File) -> Option<(u32, u64)> {
     use std::os::windows::io::AsRawHandle;

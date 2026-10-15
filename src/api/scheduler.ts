@@ -1,4 +1,4 @@
-/** Typed wrappers around the Phase 9 scheduler commands. */
+/** Scheduler commands. */
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { ScheduledTask, SchedulerData, SchedulerSettings, TaskRunStatus } from "@/models/scheduler";

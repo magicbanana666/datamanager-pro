@@ -1,7 +1,4 @@
-/**
- * Typed wrappers around the Phase 5 folder-comparison commands. Events
- * come through `subscribeJobEvents("comparison", ...)`.
- */
+/** Folder comparison commands. Events: `subscribeJobEvents("comparison", ...)`. */
 import { invoke } from "@tauri-apps/api/core";
 import type { ComparisonRequestOptions } from "@/models/comparison";
 

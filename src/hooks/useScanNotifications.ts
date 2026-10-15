@@ -5,14 +5,8 @@ import { toast } from "@/state/toastStore";
 import { formatBytes, formatNumber } from "@/utils/format";
 
 /**
- * Fires the toast/status-bar side effects for `useScanStore`'s
- * terminal states (completed/cancelled/error), exactly once per scan.
- *
- * Shared between Disk Analysis and Folder Analysis - the scan store is
- * a single global session (like `filesystemStore`), not per-page, so a
- * scan started on one page that finishes after the user navigates to
- * the other still needs to notify from wherever the user currently is;
- * both pages call this same hook rather than duplicating the logic.
+ * Toasts a scan's end state (completed, cancelled, error) once. Used by
+ * both analysis pages, since the scan store is global.
  */
 export function useScanNotifications() {
   const { status, scanId, result, error } = useScanStore();

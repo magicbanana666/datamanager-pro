@@ -1,8 +1,5 @@
-//! Read-only, non-recursive filesystem browsing. Every function here
-//! touches only the directory or file it was asked about - nothing
-//! recurses, nothing sums a folder's contents beyond its *direct*
-//! children, and nothing ever writes, deletes, renames or creates
-//! anything. The recursive high-performance scanner is Phase 3's job.
+//! Non-recursive folder browsing. Each function only reads the folder
+//! or file it's given; recursive sizes come from the scanner.
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::{
@@ -247,7 +244,7 @@ pub fn get_file_metadata(path: &str) -> Result<FileMetadata, AppError> {
         is_symlink,
         entry_type,
         attributes,
-        // Owner lookup is out of scope for Phase 2 - see PHASE2.md.
+        // Owners are looked up by the scan's Owners tab.
         owner: None,
     })
 }
@@ -330,7 +327,7 @@ mod tests {
             .find(|e| e.name == "subfolder")
             .unwrap();
         assert_eq!(dir_entry.entry_type, EntryType::Directory);
-        // Phase 2 never sums a folder's own contents in a listing.
+        // Listings don't sum folder contents.
         assert_eq!(dir_entry.size_bytes, None);
     }
 
@@ -349,8 +346,7 @@ mod tests {
         std::fs::write(dir.path().join("a.txt"), b"12345").unwrap();
         std::fs::write(dir.path().join("b.txt"), b"1234567890").unwrap();
         std::fs::create_dir(dir.path().join("sub")).unwrap();
-        // A file nested inside the subfolder must NOT be counted - this
-        // command is intentionally shallow, not a recursive scan.
+        // Files inside the subfolder aren't counted.
         std::fs::write(
             dir.path().join("sub").join("deep.txt"),
             b"ignored-because-nested",

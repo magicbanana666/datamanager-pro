@@ -1,9 +1,6 @@
-//! Content hashing shared by the Phase 5 jobs (duplicate finder and
-//! folder comparison): xxh3-128 over a streamed read, reporting bytes to
-//! the job's progress and stopping promptly on cancel. Not
-//! cryptographic - it only has to tell apart two *different* files of
-//! the same size, where an accidental 128-bit collision is not a
-//! realistic risk.
+//! Streaming xxh3-128 file hashing for the duplicate finder and the
+//! comparison, with progress and cancel. Not cryptographic, which is
+//! fine for telling files of the same size apart.
 
 use crate::models::hash_job::HashJobState;
 use crate::platform;

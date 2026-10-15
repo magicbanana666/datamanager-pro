@@ -1,7 +1,6 @@
-//! Phase 9 report rendering: a [`ReportDocument`] to self-contained
-//! HTML (charts as CSS bars, so they print), PDF (that HTML printed by
-//! Microsoft Edge in headless mode - present on every Windows 10/11
-//! machine), XLSX (one sheet per table) or CSV.
+//! Renders a [`ReportDocument`] to self-contained HTML (charts as CSS
+//! bars so they print), PDF (the HTML printed by headless Edge), XLSX
+//! (one sheet per table) or CSV.
 
 use crate::models::reports::{ReportDocument, ReportFormat, ReportRequest, ReportSection, ReportTemplate};
 use rust_xlsxwriter::{Format, Workbook};

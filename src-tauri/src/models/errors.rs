@@ -1,14 +1,10 @@
-//! Shared, serializable error type returned by every fallible Tauri
-//! command in this crate. Nothing downstream of a command boundary ever
-//! sees a raw `std::io::Error` or a Rust panic message - everything is
-//! mapped to an [`AppError`] with a stable `code` the frontend can branch
-//! on and a `message` that's safe to show a user directly.
+//! Error type returned by all commands: a stable `code` for the frontend
+//! and a `message` that can be shown to the user as is.
 
 use serde::Serialize;
 use std::fmt;
 
-/// Stable, machine-readable error classification. The frontend switches
-/// on this rather than parsing `message` text.
+/// Error classification the frontend switches on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AppErrorCode {
@@ -16,9 +12,7 @@ pub enum AppErrorCode {
     AccessDenied,
     InvalidPath,
     IoError,
-    /// Reachable on Windows once a genuinely unimplemented operation is
-    /// requested (none yet), and unconditionally on the non-Windows
-    /// `platform::fallback` build - see `AppError::unsupported`.
+    /// Only produced by the non-Windows fallback.
     #[allow(dead_code)]
     Unsupported,
     NetworkUnavailable,
@@ -95,17 +89,14 @@ impl AppError {
         Self::new(AppErrorCode::VolumeUnavailable, message)
     }
 
-    /// Used by `platform::fallback` on non-Windows builds; on Windows
-    /// this is currently unreachable since every Phase 2 operation is
-    /// implemented there.
+    /// Only used by the non-Windows fallback.
     #[allow(dead_code)]
     pub fn unsupported(message: impl Into<String>) -> Self {
         Self::new(AppErrorCode::Unsupported, message)
     }
 
-    /// Maps a raw `io::Error` encountered while touching `path` into a
-    /// user-safe [`AppError`], classifying UNC/network paths as
-    /// `NetworkUnavailable` rather than the generic `PathNotFound`.
+    /// Maps an I/O error on `path`. Failures on UNC paths become
+    /// `NetworkUnavailable`.
     pub fn from_io(err: &std::io::Error, path: &str) -> Self {
         use std::io::ErrorKind;
         let is_unc = crate::utils::path::is_unc(path);
@@ -114,8 +105,8 @@ impl AppError {
             ErrorKind::NotFound => Self::path_not_found(path),
             ErrorKind::PermissionDenied => Self::access_denied(path),
             _ => {
-                // Windows surfaces "the network path was not found" (error 53)
-                // and similar as raw OS errors rather than ErrorKind::NotFound.
+                // "Network path not found" (53) and friends arrive as raw OS
+                // errors, not ErrorKind::NotFound.
                 if is_unc {
                     return Self::network_unavailable(path).with_details(err.to_string());
                 }

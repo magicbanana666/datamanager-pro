@@ -15,10 +15,9 @@ interface TreemapProps {
   selectedId?: string | null;
   onSelect?: (node: FsNode) => void;
   onDrillDown?: (node: FsNode) => void;
-  /** Which tiles a double-click drills into. Defaults to folders whose
-   * children are already loaded; a real scan passes
-   * `hasExpandableChildren` so truncated folders (fetched on demand)
-   * stay drillable too. */
+  /** Which tiles a double-click drills into. Defaults to folders with
+   * loaded children; scans pass `hasExpandableChildren` so folders
+   * loaded on demand are included. */
   canDrillDown?: (node: FsNode) => boolean;
   /** Right-click on a tile. */
   onNodeContextMenu?: (node: FsNode, event: React.MouseEvent) => void;
@@ -35,12 +34,8 @@ const HEADER_HEIGHT = 14;
  * legible even deep in the recursion. See `MAX_TOTAL_TILES` for the
  * budget across the whole recursive layout. */
 const MAX_TILES_PER_LEVEL = 30;
-/** Hard cap on tiles across every level combined. Unlike WizTree's
- * canvas-drawn mosaic, these are real `<button>` elements (for click/
- * keyboard/hover), so unlike WizTree this can't scale to "one tile per
- * file" on a folder with tens of thousands of them without a real
- * performance cost - this keeps that bounded regardless of how deep or
- * wide the recursion goes. */
+/** Max tiles over all levels. Tiles are DOM buttons, not canvas, so
+ * the count has to stay bounded. */
 const MAX_TOTAL_TILES = 500;
 /** Below this (in either dimension), a folder renders as a single
  * solid tile instead of being recursed into - there's no useful room
@@ -53,14 +48,7 @@ const MAX_DEPTH = 6;
 const CATEGORY_COLOR_INDEX = Object.fromEntries(
   FILE_TYPE_CATEGORIES.map((c) => [c.id, c.colorIndex]),
 ) as Record<string, number>;
-/** Folders aren't categorized the way files are (see `categorizeByExtension`) -
- * a fixed neutral tone reads as "this is a folder", distinct from any
- * file-type color, the same way WizTree's folder tiles read as gray
- * regardless of what's inside them. Given how much of a real mosaic is
- * folder tiles (rather than files small enough to be leaves), a flat-out
- * dark gray read as visually flat overall - a slightly lighter, faintly
- * blue slate keeps that same "not a file category" neutrality without
- * making large stretches of the treemap look empty. */
+/** Neutral slate for folder tiles, distinct from the file type colors. */
 const FOLDER_COLOR = "#4b5b73";
 /** Darker still - the "you're inside this folder" title strip should
  * never be mistaken for a tile you'd click to open a file. */
@@ -70,13 +58,8 @@ function fileColor(name: string): string {
   return chartColor(CATEGORY_COLOR_INDEX[categorizeByExtension(name)] ?? CATEGORY_COLOR_INDEX.other);
 }
 
-/** Folds everything past the `maxTiles - 1` largest children into one
- * synthetic "Other" node, so a folder with hundreds of direct children
- * doesn't degenerate into an unreadable wall of slivers. Its `children`
- * stay the real originals - double-clicking it (or the recursive
- * layout naturally recursing into it, if it's large enough) reveals
- * exactly the folded-away items, re-bucketed the same way if there are
- * still too many. */
+/** Folds all but the `maxTiles - 1` largest children into one "Other"
+ * node. Its children are the folded items, so it can be drilled into. */
 function bucketSmallest(children: FsNode[], maxTiles: number): FsNode[] {
   if (children.length <= maxTiles) return children;
   const sorted = [...children].sort((a, b) => b.size - a.size);
@@ -214,12 +197,7 @@ export function Treemap({
         const isFile = t.node.kind === "file";
         const canDrill = canDrillDown(t.node);
         const color = t.isHeader ? HEADER_COLOR : isFile ? fileColor(t.node.name) : FOLDER_COLOR;
-        // Deliberately tight thresholds (WizTree-style density over
-        // Phase 1's original spacious tiles) - most tiles in a real,
-        // granular treemap are small, and only need to earn a label
-        // once there's genuinely room for it; below that they're still
-        // a real, clickable, hoverable (see `title`) tile, just an
-        // unlabeled block of color.
+        // Small tiles get no label; they still have a tooltip.
         const canShowLabel = t.w > 34 && t.h > (t.isHeader ? 10 : 16);
         const canShowSize = !t.isHeader && t.w > 34 && t.h > 30;
 

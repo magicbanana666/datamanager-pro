@@ -5,12 +5,9 @@ export interface VisibleRow {
   depth: number;
 }
 
-/** A real scan's folder whose children weren't included in what the
- * frontend received (see `TRANSPORT_DEPTH` in
- * `src-tauri/src/models/scan.rs`) but exist in the backend's cached
- * tree - fetch them with `useScanStore().loadChildren`. Excludes empty
- * folders and the backend's `cap_children` "Other (N items)"
- * placeholders, which genuinely have nothing to fetch. */
+/** A folder whose children weren't sent yet (see `TRANSPORT_DEPTH` in
+ * `models/scan.rs`); load them with `useScanStore().loadChildren`.
+ * False for empty folders and "Other (N items)" nodes. */
 export function needsChildren(node: FsNode): boolean {
   return (
     node.kind !== "file" &&

@@ -6,7 +6,7 @@
 # Needs the repository secret TAURI_SIGNING_PRIVATE_KEY (the contents of
 # ~/.tauri/datamanager-pro.key) and, if the key has one,
 # TAURI_SIGNING_PRIVATE_KEY_PASSWORD. Code signing (Authenticode) is not
-# configured - see PHASE10.md.
+# configured yet.
 name: Release
 
 on:

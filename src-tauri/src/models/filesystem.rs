@@ -1,7 +1,5 @@
-//! Data shapes for the read-only filesystem browsing API: directory
-//! listings, shallow directory summaries, and file/folder metadata. None
-//! of these types are ever produced by a recursive walk - see
-//! `services::filesystem_service` for exactly what each command reads.
+//! Folder browsing types: listings, shallow summaries and metadata.
+//! Nothing here comes from a recursive walk.
 
 use super::errors::AppError;
 use serde::{Deserialize, Serialize};
@@ -15,8 +13,7 @@ pub enum EntryType {
     Other,
 }
 
-/// Windows file attribute flags, exposed as a typed list rather than a
-/// raw bitmask so the frontend never has to decode bits.
+/// Windows file attributes as a list instead of a bitmask.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub enum FileAttribute {
     ReadOnly,
@@ -37,8 +34,7 @@ pub struct FileSystemEntry {
     pub name: String,
     pub path: String,
     pub entry_type: EntryType,
-    /// `None`/omitted for directories - Phase 2 never recursively sums a
-    /// folder's contents (that's Phase 3's job).
+    /// `None` for directories (sizes come from a scan).
     pub size_bytes: Option<u64>,
     pub allocated_size_bytes: Option<u64>,
     pub modified: Option<String>,
@@ -54,8 +50,7 @@ pub struct FileSystemEntry {
     pub child_count: Option<u64>,
 }
 
-/// Options accepted by `list_directory`. Defaults to hiding hidden/system
-/// items, matching the frontend's documented default.
+/// Options for `list_directory`. Hidden/system items are hidden by default.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListDirectoryOptions {
@@ -74,9 +69,7 @@ pub struct DirectoryListing {
     pub truncated_hidden: bool,
 }
 
-/// Shallow (non-recursive) directory statistics: only the directory's
-/// *direct* children are counted. This is intentionally not a disk
-/// usage scanner - see `services::filesystem_service::get_directory_summary`.
+/// Counts of a folder's direct children only.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectorySummary {
@@ -108,8 +101,7 @@ pub struct FileMetadata {
     pub is_symlink: bool,
     pub entry_type: EntryType,
     pub attributes: Vec<FileAttribute>,
-    /// Owner lookup is intentionally not implemented in Phase 2 (see
-    /// PHASE2.md limitations) - always `None` for now.
+    /// Not looked up here (see the scan's Owners tab); always `None`.
     pub owner: Option<String>,
 }
 

@@ -1,7 +1,4 @@
-//! Read-only filesystem browsing commands. Every command here is
-//! `async` and offloads its blocking `std::fs` work to
-//! `tokio::task::spawn_blocking` so a slow directory (a large folder, a
-//! stalled network share) never freezes the UI thread.
+//! Folder browsing commands. Blocking I/O runs on the blocking pool.
 
 use super::blocking;
 use crate::models::errors::AppError;

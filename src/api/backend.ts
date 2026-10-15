@@ -1,8 +1,6 @@
 /**
- * Thin, typed wrappers around `invoke()` for every Phase 1/2 Tauri
- * command. Nothing here does its own error handling beyond normalizing
- * a thrown value into an `AppError` shape - callers (mainly
- * `state/filesystemStore.ts`) decide what to do with a failure.
+ * Typed wrappers for the system, storage and filesystem commands.
+ * Errors are normalized to `AppError`; callers handle them.
  */
 import { invoke } from "@tauri-apps/api/core";
 import type {

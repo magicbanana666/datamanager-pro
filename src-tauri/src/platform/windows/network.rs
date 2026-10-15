@@ -1,6 +1,5 @@
-//! Win32 networking queries for Phase 8: SMB shares and sessions of a
-//! server (`NetShareEnum`/`NetSessionEnum`), a path's NTFS access rights
-//! (its DACL, with account names resolved). All read-only.
+//! SMB shares and sessions of a server (`NetShareEnum`,
+//! `NetSessionEnum`) and the access rights (DACL) of a path.
 
 use super::{to_wide, wide_to_string};
 use std::path::Path;

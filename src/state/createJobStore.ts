@@ -1,10 +1,7 @@
 /**
- * Factory for the Phase 5 job stores (duplicate finder, folder
- * comparison, file search): one backend job at a time, global rather
- * than page state so a running job - and its result - survive
- * navigating away and back. Terminal states are toasted from here, not
- * a page hook, so a job that finishes while the user is on another page
- * still says so.
+ * Store factory for the duplicate finder, comparison and search: one
+ * job at a time, global so it survives page changes. End states are
+ * toasted from here, so they show on any page.
  */
 import { create } from "zustand";
 import { subscribeJobEvents } from "@/api/jobs";

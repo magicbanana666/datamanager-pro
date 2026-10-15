@@ -1,8 +1,4 @@
-/**
- * Typed wrappers around the Phase 5 file-search commands, plus the
- * results panel's file actions. Events come through
- * `subscribeJobEvents("search", ...)`.
- */
+/** File search commands. Events: `subscribeJobEvents("search", ...)`. */
 import { invoke } from "@tauri-apps/api/core";
 import type { SearchRequest } from "@/models/search";
 
