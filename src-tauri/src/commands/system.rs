@@ -46,3 +46,16 @@ pub async fn get_system_info() -> Result<SystemInfo, AppError> {
 pub fn ping_backend() -> String {
     "pong".to_string()
 }
+
+/// This process's memory use (working set) in bytes, for the status bar.
+#[tauri::command]
+pub async fn get_process_memory() -> Result<u64, AppError> {
+    blocking(|| {
+        use sysinfo::{Pid, ProcessRefreshKind, ProcessesToUpdate, System};
+        let pid = Pid::from_u32(std::process::id());
+        let mut sys = System::new();
+        sys.refresh_processes_specifics(ProcessesToUpdate::Some(&[pid]), true, ProcessRefreshKind::nothing().with_memory());
+        Ok(sys.process(pid).map_or(0, |p| p.memory()))
+    })
+    .await
+}

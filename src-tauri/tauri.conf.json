@@ -27,13 +27,41 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "publisher": "Jonas Vanhulle",
+    "copyright": "Copyright (c) 2026 Jonas Vanhulle",
+    "category": "Utility",
+    "shortDescription": "Analyze. Migrate. Manage. Your Data.",
+    "longDescription": "DataManager Pro analyzes disks, folders and network shares, finds duplicates, compares and searches locations, and copies, moves and syncs data with a resumable journal.",
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "displayLanguageSelector": false
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDZFRDg1NDhBOERDOTg3QjkKUldTNWg4bU5pbFRZYm1VcHJXcWc3aWF2cEJ2aytoeXhDeUxrYys2eGpDZEF2MCtqUWY2MkIwZDIK",
+      "endpoints": [
+        "https://github.com/magicbanana666/datamanager-pro/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

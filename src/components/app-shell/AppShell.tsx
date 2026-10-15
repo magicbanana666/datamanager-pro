@@ -1,20 +1,57 @@
 import { useEffect } from "react";
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { Sidebar } from "@/components/sidebar/Sidebar";
 import { Toolbar } from "@/components/toolbar/Toolbar";
 import { StatusBar } from "@/components/status-bar/StatusBar";
 import { ToastHost } from "@/components/toast/ToastHost";
 import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { HelpDialog } from "@/components/dialogs/HelpDialog";
-import { PlaceholderDialog } from "@/components/dialogs/PlaceholderDialog";
+import { NewScanDialog } from "@/components/dialogs/NewScanDialog";
+import { PropertiesDialog } from "@/components/dialogs/PropertiesDialog";
+import { ContextMenu } from "@/components/menu/ContextMenu";
+import { useUiStore } from "@/state/uiStore";
+import { getAppVersion } from "@/api/backend";
+import { StartupDialogs } from "@/components/dialogs/StartupDialogs";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { useSettingsStore } from "@/state/settingsStore";
+import { useSchedulerStore } from "@/state/schedulerStore";
+import { startActivityTracking } from "@/state/activityStore";
 
 export function AppShell() {
   const density = useSettingsStore((s) => s.settings.appearance.density);
+  const accent = useSettingsStore((s) => s.settings.appearance.accent);
+  const location = useLocation();
+  const pageEpoch = useUiStore((s) => s.pageEpoch);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-accent", accent);
+  }, [accent]);
+
+  // No browser menu (Back, Reload, Print, Inspect...) on right-click:
+  // files and folders get the app's own menu, text fields keep the
+  // standard cut/copy/paste one.
+  useEffect(() => {
+    const block = (e: MouseEvent) => {
+      if ((e.target as HTMLElement | null)?.closest("input, textarea, [contenteditable='true']")) return;
+      e.preventDefault();
+    };
+    document.addEventListener("contextmenu", block);
+    return () => document.removeEventListener("contextmenu", block);
+  }, []);
+
+  // The scheduler runs in the backend whatever page is open; subscribing
+  // here makes its finished runs toast everywhere.
+  useEffect(() => {
+    void useSchedulerStore.getState().init();
+    startActivityTracking();
+    getAppVersion()
+      .then((v) => useUiStore.getState().setAppVersion(v.version))
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="flex h-screen w-screen min-w-0 flex-col bg-canvas text-fg">
@@ -22,7 +59,9 @@ export function AppShell() {
       <div className="flex min-h-0 flex-1">
         <Sidebar />
         <main className="min-w-0 flex-1 overflow-y-auto bg-canvas">
-          <Outlet />
+          <ErrorBoundary key={pageEpoch} resetKey={location.pathname}>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
       <StatusBar />
@@ -30,7 +69,10 @@ export function AppShell() {
       <ToastHost />
       <SettingsDialog />
       <HelpDialog />
-      <PlaceholderDialog />
+      <NewScanDialog />
+      <PropertiesDialog />
+      <ContextMenu />
+      <StartupDialogs />
     </div>
   );
 }

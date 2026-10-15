@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { Database } from "lucide-react";
+import logo from "@/assets/logo-mark.png";
 import clsx from "clsx";
 import { NAV_ENTRIES } from "@/components/app-shell/navConfig";
 
@@ -7,9 +7,7 @@ export function Sidebar() {
   return (
     <aside className="flex h-full w-[196px] shrink-0 flex-col border-r border-border bg-canvas-alt">
       <div className="flex items-center gap-2.5 border-b border-border px-4 py-3.5">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-accent text-fg-on-accent">
-          <Database size={17} strokeWidth={2.2} />
-        </div>
+        <img src={logo} alt="" className="h-8 w-8 shrink-0" draggable={false} />
         <div className="min-w-0 leading-tight">
           <div className="truncate text-[14px] font-bold text-fg">DataManager Pro</div>
         </div>

@@ -25,3 +25,6 @@ dist-ssr
 
 # Local screenshots (not published)
 Example images/
+
+# Post-commit release builds (scripts/build-after-commit.ps1)
+builds

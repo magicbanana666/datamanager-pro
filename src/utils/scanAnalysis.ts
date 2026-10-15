@@ -58,7 +58,7 @@ export function categorizeByExtension(name: string): FileTypeCategoryId {
   return EXTENSION_TO_CATEGORY.get(extensionOf(name)) ?? "other";
 }
 
-const TIMELINE_BUCKETS: { label: string; maxDays: number }[] = [
+export const TIMELINE_BUCKETS: { label: string; maxDays: number }[] = [
   { label: "Today", maxDays: 1 },
   { label: "This week", maxDays: 7 },
   { label: "This month", maxDays: 30 },
@@ -67,7 +67,7 @@ const TIMELINE_BUCKETS: { label: string; maxDays: number }[] = [
   { label: "Older", maxDays: Infinity },
 ];
 
-function timelineBucketLabel(lastModified: string | null, now: number): string {
+export function timelineBucketLabel(lastModified: string | null, now: number): string {
   if (!lastModified) return "Older"; // unknown date - bucket conservatively rather than guess "Today"
   const days = (now - new Date(lastModified).getTime()) / (1000 * 60 * 60 * 24);
   for (const bucket of TIMELINE_BUCKETS) {

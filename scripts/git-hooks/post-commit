@@ -1,0 +1,5 @@
+#!/bin/sh
+# Kick off a background release build (scripts/build-after-commit.ps1);
+# returns immediately so the commit isn't blocked.
+powershell.exe -NoProfile -Command "Start-Process pwsh -WindowStyle Hidden -ArgumentList '-NoProfile','-ExecutionPolicy','Bypass','-File','scripts/build-after-commit.ps1'" >/dev/null 2>&1 &
+exit 0

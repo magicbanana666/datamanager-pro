@@ -6,7 +6,16 @@
 **Phase 3 — Complete** (real recursive scanner, see
 [PHASE3.md](./PHASE3.md)).
 **Phase 4 — Complete** (real Treemap/charts/tables, see
-[PHASE4.md](./PHASE4.md)). The phases below are suggested milestones
+[PHASE4.md](./PHASE4.md)).
+**Phase 5 — Complete** (real search/comparison/duplicates, see
+[PHASE5.md](./PHASE5.md)).
+**Phases 6 & 7 — Complete** (copy/move/sync engine with journal and
+resume, see [PHASE6.md](./PHASE6.md)).
+**Phase 8 — Complete** (network shares, see [PHASE8.md](./PHASE8.md)).
+**Phase 9 — Complete** (scheduler and reports, see [PHASE9.md](./PHASE9.md)).
+**Phase 10 — Complete** (installer, portable, updates, hardening, see
+[PHASE10.md](./PHASE10.md)).
+ The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
 and simply swap mock data sources for real ones behind the same
@@ -50,37 +59,39 @@ neither has real data to show yet. Persistence (reopening a completed
 scan without rescanning) was explicitly deferred as a fast-follow, not
 built this pass.
 
-### Phase 5 — Search, comparison & duplicate engine
+### ~~Phase 5 — Search, comparison & duplicate engine~~ ✅ Complete
 Real file-name/content search (with regex, in-archive search),
 real folder comparison (size/timestamp, content hash, name-only), and
-a real duplicate-detection engine (hash-based grouping). Replace
-`src/mock/search.ts`, `src/mock/comparison.ts`, `src/mock/duplicates.ts`.
+a real duplicate-detection engine (hash-based grouping, hard-link
+aware), plus the Folder Analysis Duplicates tab. All read-only. See
+[PHASE5.md](./PHASE5.md).
 
-### Phase 6 — Copy/move engine with journaling & resume
+### ~~Phase 6 — Copy/move engine with journaling & resume~~ ✅ Complete
 A real, cancellable/resumable copy/move engine with a transaction
-journal so interrupted transfers can resume. Wire up Data Transfer's
-collision policies, verification, and permission preservation for real.
+journal so interrupted transfers can resume, with real collision
+policies, verification and permission preservation, plus the file
+actions on Duplicate Finder and Compare Locations. See
+[PHASE6.md](./PHASE6.md).
 
-### Phase 7 — Incremental sync & mirror engine
-Build the real Sync / Incremental engine (mirror, incremental, update-
-newer, two-way) on top of the Phase 6 journal, including real conflict
-detection or the two-way sync change tracker.
+### ~~Phase 7 — Incremental sync & mirror engine~~ ✅ Complete
+Mirror, incremental, update-newer and two-way sync on the same engine,
+with a two-way change tracker and conflict resolution. See
+[PHASE6.md](./PHASE6.md).
 
-### Phase 8 — Network share support & IP/port scanning
-Real SMB share browsing/scanning (replacing `src/mock/network.ts`) and
-a real, consent-gated IP/port scanner (replacing `src/mock/portscan.ts`)
-using async TCP connect scans - always behind explicit user action and
-scoped to networks the user has permission to scan. Phase 2 already
-validates UNC path syntax/reachability via `validate_path`; this phase
-adds actual SMB share discovery and LAN host enumeration on top of that.
+### ~~Phase 8 — Network share support~~ ✅ Complete
+Real SMB share scanning, server shares, access rights, sessions,
+connection status and read-speed measurement on Network Analysis. The
+IP/port scanner part was not built; that page stays a demo. See
+[PHASE8.md](./PHASE8.md).
 
-### Phase 9 — Scheduler & reporting
-A real scheduler (either an internal cron-like runner or genuine
-Windows Task Scheduler integration, clearly disclosed to the user) and
-real report generation (PDF/HTML/XLSX/CSV) replacing the "Generate
-Report" no-op in `src/pages/reports`.
+### ~~Phase 9 — Scheduler & reporting~~ ✅ Complete
+An in-app scheduler (runs while the app is open, clearly disclosed)
+that runs transfer and scan tasks, and real HTML/PDF/XLSX/CSV reports
+from the app's live results. See [PHASE9.md](./PHASE9.md).
 
-### Phase 10 — Installer, portable build, update system & production hardening
-MSI/NSIS installer via `tauri-bundler`, a portable single-exe build,
-an auto-update channel, code signing, crash reporting, and a pass over
-error handling/edge cases across every engine added in Phases 2-9.
+### ~~Phase 10 — Installer, portable build, update system & production hardening~~ ✅ Complete
+NSIS and MSI installers, a portable edition (data next to the exe), an
+auto-update channel via GitHub Releases with signed updates and a release
+workflow, crash reports and log files, single-instance, a capped scan
+cache, persistent settings and CI. Code signing needs a certificate and
+is documented, not configured. See [PHASE10.md](./PHASE10.md).

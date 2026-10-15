@@ -23,6 +23,9 @@ pub enum AppErrorCode {
     Unsupported,
     NetworkUnavailable,
     VolumeUnavailable,
+    /// A request the user can fix by changing their input (an empty
+    /// query, an invalid regex) - not a filesystem problem.
+    InvalidInput,
     Unknown,
 }
 

@@ -83,3 +83,15 @@ export async function subscribeScanEvents(
     for (const unlisten of unlistenFns) unlisten();
   };
 }
+
+export interface OwnerStat {
+  owner: string;
+  files: number;
+  size: number;
+  percent: number;
+}
+
+/** Size per file owner under `path` of a completed scan. */
+export function analyzeOwners(scanId: string, path: string): Promise<OwnerStat[]> {
+  return invoke("analyze_owners", { scanId, path });
+}

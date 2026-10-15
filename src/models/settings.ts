@@ -1,40 +1,41 @@
+/** App settings (Settings dialog), persisted by `settingsStore`. Every
+ * one of them is read somewhere - see the comment on each. */
 export interface AppSettings {
   general: {
+    /** AppShell, at launch. */
     launchBehavior: "restore-last-session" | "show-overview" | "show-new-scan";
+    /** Restores the last used locations at launch (utils/project.ts). */
     rememberLastLocation: boolean;
+    /** StartupDialogs. */
     checkForUpdates: boolean;
   };
   appearance: {
     theme: "dark";
+    /** AppShell / DataTable. */
     density: "comfortable" | "compact";
+    /** AppShell sets `data-accent`; styles/index.css. */
     accent: "blue" | "teal" | "purple" | "green";
   };
   scanning: {
+    /** Walk-engine threads; 0 = every core. */
     defaultThreadCount: number;
-    followJunctions: boolean;
     includeHiddenFiles: boolean;
   };
   fileOperations: {
-    defaultCollisionBehavior:
-      | "skip-same"
-      | "compare-hash"
-      | "rename-new"
-      | "overwrite-older";
+    /** Data Transfer's starting options. */
+    defaultCollisionBehavior: "skip-same" | "compare-hash" | "rename-new" | "overwrite-older";
     verifyAfterCopy: boolean;
     preserveTimestamps: boolean;
   };
-  network: {
-    timeoutSeconds: number;
-    concurrency: number;
-    resolveHostnames: boolean;
-  };
   reports: {
+    /** The Reports page's starting format and output folder. */
     defaultFormat: "PDF" | "HTML" | "XLSX" | "CSV";
+    /** Empty = Documents\DataManager Pro Reports. */
     defaultOutputFolder: string;
   };
   advanced: {
+    /** Applied at once and kept for the next start (`set_log_level`). */
     logLevel: "error" | "warn" | "info" | "debug" | "trace";
-    developerMode: boolean;
   };
 }
 
@@ -50,26 +51,19 @@ export const DEFAULT_SETTINGS: AppSettings = {
     accent: "blue",
   },
   scanning: {
-    defaultThreadCount: 8,
-    followJunctions: true,
-    includeHiddenFiles: false,
+    defaultThreadCount: 0,
+    includeHiddenFiles: true,
   },
   fileOperations: {
     defaultCollisionBehavior: "skip-same",
     verifyAfterCopy: true,
     preserveTimestamps: true,
   },
-  network: {
-    timeoutSeconds: 10,
-    concurrency: 16,
-    resolveHostnames: true,
-  },
   reports: {
     defaultFormat: "PDF",
-    defaultOutputFolder: "D:\\Data\\Reports",
+    defaultOutputFolder: "",
   },
   advanced: {
     logLevel: "info",
-    developerMode: false,
   },
 };

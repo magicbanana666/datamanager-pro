@@ -1,11 +1,8 @@
-import { useNavigate } from "react-router-dom";
 import type { ToolDefinition } from "@/models/tools";
 import { Button } from "@/components/controls/Button";
-import { toast } from "@/state/toastStore";
 import { chartColor } from "@/utils/colors";
 
-export function ToolCard({ tool }: { tool: ToolDefinition }) {
-  const navigate = useNavigate();
+export function ToolCard({ tool, onOpen }: { tool: ToolDefinition; onOpen: (tool: ToolDefinition) => void }) {
   const Icon = tool.icon;
 
   return (
@@ -22,11 +19,7 @@ export function ToolCard({ tool }: { tool: ToolDefinition }) {
           <div className="text-xs text-fg-muted leading-snug">{tool.description}</div>
         </div>
       </div>
-      <Button
-        size="sm"
-        className="mt-auto self-start"
-        onClick={() => (tool.route ? navigate(tool.route) : toast.demo())}
-      >
+      <Button size="sm" className="mt-auto self-start" onClick={() => onOpen(tool)}>
         Open
       </Button>
     </div>

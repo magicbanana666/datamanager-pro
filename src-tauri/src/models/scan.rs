@@ -17,6 +17,9 @@ pub struct ScanOptions {
     pub show_hidden: bool,
     #[serde(default)]
     pub show_system: bool,
+    /// Walk-engine threads (Settings > Scanning); `None` uses every core.
+    #[serde(default)]
+    pub threads: Option<usize>,
 }
 
 /// Which engine actually produced a scan - surfaced to the frontend so

@@ -1,44 +1,49 @@
-export interface NetworkConnectionStatus {
-  connected: boolean;
+/** Mirrors `src-tauri/src/models/network.rs` (Phase 8). */
+export interface ShareConnection {
   server: string;
   share: string;
   user: string;
-  protocol: string;
-  latencyMs: number;
+  reachable: boolean;
+  latencyMs: number | null;
+  protocol: string | null;
 }
 
 export interface NetworkShare {
   name: string;
   path: string;
-  totalBytes: number;
-  freeBytes: number;
-  fileSystem: string;
-  status: "online" | "offline" | "degraded";
-}
-
-export interface NetworkScanSummary {
-  folders: number;
-  files: number;
-  totalBytes: number;
-  scanTimeSeconds: number;
-  transferRateMbps: number;
+  kind: "disk" | "printer" | "device" | "ipc" | "other";
+  special: boolean;
+  remark: string;
+  totalBytes: number | null;
+  freeBytes: number | null;
+  fileSystem: string | null;
+  status: "online" | "no-access" | "n/a";
 }
 
 export interface AccessRightEntry {
-  type: "User" | "Group";
+  type: "User" | "Group" | "Computer" | "SID";
   name: string;
   permissions: string;
+  allow: boolean;
   inherited: boolean;
-}
-
-export interface ThroughputSample {
-  t: number;
-  mbps: number;
 }
 
 export interface NetworkSession {
   user: string;
   host: string;
-  connectedSince: string;
-  openFiles: number;
+  connectedSeconds: number;
+  idleSeconds: number;
+}
+
+export interface ThroughputSample {
+  tMs: number;
+  mbps: number;
+}
+
+export interface ReadSpeedResult {
+  path: string;
+  bytesRead: number;
+  elapsedMs: number;
+  averageMbps: number;
+  samples: ThroughputSample[];
 }

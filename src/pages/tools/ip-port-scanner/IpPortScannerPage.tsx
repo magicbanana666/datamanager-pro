@@ -20,6 +20,7 @@ import { Button } from "@/components/controls/Button";
 import { Tabs } from "@/components/controls/Tabs";
 import { Badge } from "@/components/controls/Badge";
 import { ProgressBar } from "@/components/charts/ProgressBar";
+import { DemoBadge } from "@/components/controls/DemoBadge";
 import { commonPortsTop100, mockHosts } from "@/mock/portscan";
 import type { HostScanResult, PortSettingMode, ScanTargetMode } from "@/models/portscan";
 import { formatDuration } from "@/utils/format";
@@ -105,6 +106,11 @@ export function IpPortScannerPage() {
         <ArrowLeft size={13} /> Back to Tools
       </button>
       <PageHeader title="IP / Port Scanner" description="Scan IP ranges or hostnames to discover devices and open ports." />
+
+      <div className="flex items-center gap-2 rounded-md border border-warning/40 bg-warning-soft px-3 py-2 text-[12px] text-fg">
+        <DemoBadge />
+        This page is a demonstration: the hosts and ports below are simulated sample data and no network traffic is sent.
+      </div>
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 

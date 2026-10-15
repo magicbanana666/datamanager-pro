@@ -1,4 +1,43 @@
-//! Reserved for Phase 8 network share and IP/port scanning commands
-//! (e.g. `scan_network_share`, `scan_ports`). No commands are registered
-//! from this module yet - Phase 1's Network Analysis and IP/Port Scanner
-//! pages run entirely on frontend mock data with no real sockets opened.
+//! Tauri commands for Phase 8's Network Analysis: connection details,
+//! a server's shares and sessions, access rights of a path, and a read
+//! speed measurement. All read-only. Scanning a share's contents uses
+//! the regular `start_scan`.
+
+use super::blocking;
+use crate::models::errors::{AppError, AppErrorCode};
+use crate::models::network::{
+    AccessRightEntry, NetworkSession, NetworkShare, ReadSpeedResult, ShareConnection,
+};
+use crate::services::network_service;
+
+fn server_of(input: &str) -> Result<String, AppError> {
+    network_service::server_name(input)
+        .ok_or_else(|| AppError::new(AppErrorCode::InvalidInput, "Enter a server name or a path like \\\\server\\share."))
+}
+
+#[tauri::command]
+pub async fn get_share_connection(path: String) -> Result<ShareConnection, AppError> {
+    network_service::connection(&path).await
+}
+
+#[tauri::command]
+pub async fn list_server_shares(server: String) -> Result<Vec<NetworkShare>, AppError> {
+    let server = server_of(&server)?;
+    blocking(move || network_service::shares(&server)).await
+}
+
+#[tauri::command]
+pub async fn list_server_sessions(server: String) -> Result<Vec<NetworkSession>, AppError> {
+    let server = server_of(&server)?;
+    blocking(move || network_service::sessions(&server)).await
+}
+
+#[tauri::command]
+pub async fn get_access_rights(path: String) -> Result<Vec<AccessRightEntry>, AppError> {
+    blocking(move || network_service::access_rights(&path)).await
+}
+
+#[tauri::command]
+pub async fn measure_read_speed(path: String) -> Result<ReadSpeedResult, AppError> {
+    blocking(move || network_service::read_speed(&path)).await
+}

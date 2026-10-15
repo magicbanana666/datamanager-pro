@@ -25,6 +25,7 @@ export type AppErrorCode =
   | "unsupported"
   | "networkUnavailable"
   | "volumeUnavailable"
+  | "invalidInput"
   | "unknown";
 
 export interface AppError {
@@ -186,12 +187,9 @@ export interface PathValidation {
 export interface ScanOptions {
   showHidden: boolean;
   showSystem: boolean;
+  /** Walk-engine threads; omitted/null = every core. */
+  threads?: number | null;
 }
-
-export const DEFAULT_SCAN_OPTIONS: ScanOptions = {
-  showHidden: false,
-  showSystem: false,
-};
 
 /** Which engine actually produced a scan. Only ever known once a scan
  * finishes - the MFT-vs-walk decision happens inside the scan itself,

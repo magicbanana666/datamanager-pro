@@ -7,6 +7,13 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# main.rs has no tests, and its test exe would carry the app's
+# requireAdministrator manifest (os error 740 from a normal terminal).
+[[bin]]
+name = "datamanager-pro"
+path = "src/main.rs"
+test = false
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.
@@ -27,16 +34,33 @@ thiserror = "2"
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 sysinfo = "0.33"
 dunce = "1"
-tokio = { version = "1", features = ["rt", "sync", "macros", "time"] }
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "sync", "macros", "time", "net", "process"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 rayon = "1.12.0"
 ntfs = "0.4.0"
+xxhash-rust = { version = "0.8.19", features = ["xxh3"] }
+regex = "1.13.1"
+zip = { version = "9.0.3", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+rust_xlsxwriter = "0.99.1"
+tauri-plugin-single-instance = "2.5.4"
+tauri-plugin-updater = "2.14.0"
+tauri-plugin-process = "2.4.0"
+md-5 = "0.11.0"
+sha1 = "0.11.0"
+sha2 = "0.11.1"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = [
   "Win32_Storage_FileSystem",
   "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_UI_Shell",
+  "Win32_NetworkManagement_NetManagement",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_Threading",
 ] }
 
 [dev-dependencies]
@@ -50,3 +74,13 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# The post-commit build (scripts/build-after-commit.ps1): optimized like
+# release, but without LTO and incremental, so after a commit only what
+# changed is rebuilt - minutes instead of a full LTO build each time.
+# Installers and releases keep using [profile.release].
+[profile.quick]
+inherits = "release"
+lto = false
+codegen-units = 64
+incremental = true

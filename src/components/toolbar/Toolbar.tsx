@@ -12,6 +12,11 @@ import {
 import clsx from "clsx";
 import type { LucideIcon } from "lucide-react";
 import { useUiStore } from "@/state/uiStore";
+import { pickFile, pickSaveFile } from "@/api/dialog";
+import { readProjectFile, saveTextFile } from "@/api/fileops";
+import { toAppError } from "@/api/backend";
+import { toast } from "@/state/toastStore";
+import { applyProject, collectProject, parseProject } from "@/utils/project";
 
 interface ToolbarButtonConfig {
   id: string;
@@ -39,38 +44,48 @@ function ToolbarButton({ label, icon: Icon, active, onClick }: { label: string; 
 export function Toolbar() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { showPlaceholderDialog, openSettings, openHelp } = useUiStore();
+  const { openNewScan, openSettings, openHelp, remountPages } = useUiStore();
+
+  async function openProject() {
+    const path = await pickFile();
+    if (!path) return;
+    try {
+      const project = parseProject(await readProjectFile(path));
+      applyProject(project);
+      remountPages();
+      navigate(project.page || "/");
+      toast.success(`Opened ${path.split("\\").pop()}.`, "Project opened");
+    } catch (err) {
+      toast.danger(err instanceof Error ? err.message : toAppError(err).message);
+    }
+  }
+
+  async function saveProject() {
+    const path = await pickSaveFile("DataManager Project.dmproj", [{ name: "DataManager Pro project", extensions: ["dmproj"] }]);
+    if (!path) return;
+    saveTextFile(path, JSON.stringify(collectProject(), null, 2))
+      .then(() => toast.success("The locations and options of every page were saved.", "Project saved"))
+      .catch((err) => toast.danger(toAppError(err).message));
+  }
 
   const leftButtons: ToolbarButtonConfig[] = [
     {
       id: "new-scan",
       label: "New Scan",
       icon: ScanSearch,
-      action: () =>
-        showPlaceholderDialog(
-          "New Scan",
-          "Phase 1 Demo Mode — this action is not connected to the backend yet. Use the sidebar to explore Disk, Folder or Network Analysis with sample data instead.",
-        ),
+      action: openNewScan,
     },
     {
       id: "open-project",
       label: "Open Project",
       icon: FolderOpen,
-      action: () =>
-        showPlaceholderDialog(
-          "Open Project",
-          "Phase 1 Demo Mode — project files aren't implemented yet. This will let you reopen a saved scan/transfer configuration in a later phase.",
-        ),
+      action: () => void openProject(),
     },
     {
       id: "save-project",
       label: "Save Project",
       icon: Save,
-      action: () =>
-        showPlaceholderDialog(
-          "Save Project",
-          "Phase 1 Demo Mode — project files aren't implemented yet. This will let you save the current scan/transfer configuration in a later phase.",
-        ),
+      action: () => void saveProject(),
     },
     { id: "compare", label: "Compare", icon: GitCompare, path: "/comparison" },
     { id: "scheduler", label: "Scheduler", icon: Calendar, path: "/scheduler" },

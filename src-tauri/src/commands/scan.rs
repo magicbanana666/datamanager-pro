@@ -48,14 +48,32 @@ pub struct ScanRegistry {
 /// session, keyed by scan id - so `get_subtree` can serve a folder's
 /// real children the instant the user drills into one that
 /// `scan-complete`'s own (depth-truncated) payload didn't include,
-/// with no re-scan needed. Unbounded for now (matches `ScanRegistry`'s
-/// existing "no eviction" scope) - a future phase could cap this to
-/// the last N scans or drop entries on navigating away, if repeated
-/// whole-drive scans in one session ever prove to be a real memory
-/// concern in practice.
+/// with no re-scan needed. Capped at [`MAX_CACHED_TREES`] (the oldest
+/// goes first): a whole-drive tree is hundreds of MB, and each page
+/// only ever shows its latest scan.
 #[derive(Default)]
 pub struct ScanTreeCache {
     trees: Mutex<HashMap<String, Arc<FsNode>>>,
+    /// Scan ids, oldest first.
+    order: Mutex<std::collections::VecDeque<String>>,
+}
+
+/// Disk/Folder Analysis and Network Analysis, plus room for superseded
+/// scans a page may still ask a subtree of.
+const MAX_CACHED_TREES: usize = 4;
+
+impl ScanTreeCache {
+    fn insert(&self, scan_id: String, root: FsNode) {
+        let mut trees = self.trees.lock().unwrap();
+        let mut order = self.order.lock().unwrap();
+        trees.insert(scan_id.clone(), Arc::new(root));
+        order.push_back(scan_id);
+        while order.len() > MAX_CACHED_TREES {
+            if let Some(oldest) = order.pop_front() {
+                trees.remove(&oldest);
+            }
+        }
+    }
 }
 
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(150);
@@ -272,11 +290,7 @@ async fn run_and_report(
             // comment for why a full whole-drive tree can't go out in
             // one `scan-complete` event at all.
             let transport_root = truncate_for_transport(&root, TRANSPORT_DEPTH);
-            app.state::<ScanTreeCache>()
-                .trees
-                .lock()
-                .unwrap()
-                .insert(scan_id.clone(), Arc::new(root));
+            app.state::<ScanTreeCache>().insert(scan_id.clone(), root);
 
             let result = ScanResult {
                 scan_id: scan_id.clone(),
@@ -288,4 +302,67 @@ async fn run_and_report(
             let _ = app.emit("scan-complete", &result);
         }
     }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerStat {
+    pub owner: String,
+    pub files: u64,
+    pub size: u64,
+    pub percent: f64,
+}
+
+/// Size and file count per file owner (NTFS) under `path` in a cached
+/// scan - the Users/Owners tab. Reads each file's owner on the fly
+/// (in parallel); unreadable ones count as "(unknown)".
+#[tauri::command]
+pub async fn analyze_owners(app: AppHandle, scan_id: String, path: String) -> Result<Vec<OwnerStat>, AppError> {
+    use rayon::prelude::*;
+    let root = cached_tree(&app, &scan_id)?;
+    super::blocking(move || {
+        let node = lookup(&root, &path)?;
+        let mut files: Vec<(&str, u64)> = Vec::new();
+        let mut stack = vec![node];
+        while let Some(n) = stack.pop() {
+            match n.kind {
+                crate::models::scan::NodeKind::File => files.push((n.path.as_str(), n.size)),
+                crate::models::scan::NodeKind::Folder => stack.extend(n.children.as_deref().unwrap_or(&[])),
+            }
+        }
+        let totals = files
+            .par_iter()
+            .fold(HashMap::<Vec<u8>, (u64, u64)>::new, |mut acc, &(p, size)| {
+                let sid = crate::platform::current::network::owner_sid(std::path::Path::new(p)).unwrap_or_default();
+                let entry = acc.entry(sid).or_default();
+                entry.0 += 1;
+                entry.1 += size;
+                acc
+            })
+            .reduce(HashMap::new, |mut a, b| {
+                for (k, (f, s)) in b {
+                    let e = a.entry(k).or_default();
+                    e.0 += f;
+                    e.1 += s;
+                }
+                a
+            });
+        let total: u64 = totals.values().map(|v| v.1).sum();
+        let mut stats: Vec<OwnerStat> = totals
+            .into_iter()
+            .map(|(sid, (files, size))| OwnerStat {
+                owner: if sid.is_empty() {
+                    "(unknown)".into()
+                } else {
+                    crate::platform::current::network::sid_account_name(&sid)
+                },
+                files,
+                size,
+                percent: if total > 0 { size as f64 / total as f64 * 100.0 } else { 0.0 },
+            })
+            .collect();
+        stats.sort_by_key(|s| std::cmp::Reverse(s.size));
+        Ok(stats)
+    })
+    .await
 }

@@ -136,3 +136,20 @@ mark.search-hit {
   border-radius: 2px;
   padding: 0 1px;
 }
+
+/* Settings > Appearance > Accent (AppShell sets data-accent). */
+:root[data-accent="teal"] {
+  --color-accent: #14b8a6;
+  --color-accent-hover: #0f9e8f;
+  --color-accent-soft: #11403c;
+}
+:root[data-accent="purple"] {
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c4ddf;
+  --color-accent-soft: #2f2257;
+}
+:root[data-accent="green"] {
+  --color-accent: #22c55e;
+  --color-accent-hover: #1aa54e;
+  --color-accent-soft: #163d24;
+}

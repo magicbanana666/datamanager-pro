@@ -46,7 +46,17 @@ pub fn run_scan(
                 reason = %reason,
                 "MFT scan unavailable, falling back to directory walk"
             );
-            let root = scan_dir(Path::new(root_path), options, state);
+            let walk = || scan_dir(Path::new(root_path), options, state);
+            // A thread count from Settings gets its own pool; the walk's
+            // nested par_iters then stay within it.
+            let root = match options
+                .threads
+                .filter(|n| *n > 0)
+                .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).stack_size(64 * 1024 * 1024).build().ok())
+            {
+                Some(pool) => pool.install(walk),
+                None => walk(),
+            };
             (root, ScanEngine::Walk)
         }
     }

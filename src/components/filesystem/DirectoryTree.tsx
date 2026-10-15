@@ -1,3 +1,4 @@
+import { useFsContextMenu } from "@/hooks/useFsContextMenu";
 import { useState } from "react";
 import { ChevronDown, ChevronRight, Folder, Loader2 } from "lucide-react";
 import clsx from "clsx";
@@ -17,6 +18,7 @@ interface DirectoryTreeNodeProps {
  * than that - expanding a grandchild later fetches *its* children in
  * its own request. Nothing pre-loads the whole tree. */
 function DirectoryTreeNode({ path, name, depth, selectedPath, onSelect }: DirectoryTreeNodeProps) {
+  const fsMenu = useFsContextMenu();
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<FileSystemEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -45,6 +47,7 @@ function DirectoryTreeNode({ path, name, depth, selectedPath, onSelect }: Direct
     <div>
       <div
         onClick={() => onSelect(path)}
+        onContextMenu={(e) => fsMenu.open(e, { path, kind: "folder" })}
         style={{ paddingLeft: depth * 14 }}
         className={clsx(
           "flex items-center gap-1 rounded py-1 pr-2 text-[12.5px] cursor-pointer",
