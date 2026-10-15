@@ -63,6 +63,9 @@ export function NetworkAnalysisPage() {
 
   const currentNode = breadcrumb[breadcrumb.length - 1];
   const visibleRows = useMemo(() => flattenVisible(currentNode, expandedIds), [currentNode, expandedIds]);
+  // O(1) per-row depth lookup for the Name column - a linear `find`
+  // per row made rendering a wide expanded folder quadratic.
+  const depthById = useMemo(() => new Map(visibleRows.map((r) => [r.node.id, r.depth])), [visibleRows]);
 
   function drillInto(node: FsNode) {
     setBreadcrumb((b) => [...b, node]);
@@ -92,8 +95,7 @@ export function NetworkAnalysisPage() {
       minWidth: 160,
       sortAccessor: (n) => n.name,
       render: (n) => {
-        const row = visibleRows.find((r) => r.node.id === n.id);
-        const depth = row?.depth ?? 0;
+        const depth = depthById.get(n.id) ?? 0;
         const hasChildren = !!n.children && n.children.length > 0;
         return (
           <div className="flex min-w-0 items-center gap-1" style={{ paddingLeft: depth * 16 }}>
@@ -130,7 +132,7 @@ export function NetworkAnalysisPage() {
         </div>
       ),
     },
-    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified, render: (n) => formatDate(n.lastModified) },
+    { key: "modified", header: "Last Modified", width: 150, sortAccessor: (n) => n.lastModified ?? "", render: (n) => formatDate(n.lastModified) },
   ];
 
   return (
@@ -189,7 +191,13 @@ export function NetworkAnalysisPage() {
 
       <Tabs tabs={TABS} active={tab} onChange={setTab} />
 
-      <div className="grid min-h-0 flex-1 grid-cols-[1fr_300px] gap-3">
+      {/* auto-rows-fr: without it this grid's implicit row defaults to
+          auto (content-based) sizing instead of stretching to fill this
+          flex-1 container - starves the Treemap's ResizeObserver-measured
+          height down to 0 whenever the row's content doesn't happen to be
+          tall enough on its own (found live while wiring real data into
+          the same pattern on Disk/Folder Analysis - see PHASE4.md). */}
+      <div className="grid min-h-0 flex-1 auto-rows-fr grid-cols-[1fr_300px] gap-3">
         <Card padded={false} bodyClassName="p-3 flex flex-col gap-3 min-h-0 overflow-y-auto" className="min-h-0">
           {tab === "overview" && (
             <>
@@ -347,7 +355,10 @@ export function NetworkAnalysisPage() {
         </div>
       </div>
 
-      <Card title="Folders" padded={false} bodyClassName="h-[200px]">
+      {/* flex-none: cancels Card's default flex-1 (flex-basis:0%), which
+          otherwise beats this fixed height in a flex-col layout - see the
+          identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md). */}
+      <Card title="Folders" padded={false} bodyClassName="h-[200px] flex-none">
         <DataTable
           columns={columns}
           rows={visibleRows.map((r) => r.node)}

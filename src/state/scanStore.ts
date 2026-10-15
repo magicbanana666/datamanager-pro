@@ -1,0 +1,127 @@
+/**
+ * Real, backend-backed state for one Phase 3 recursive scan at a time.
+ * Disk Analysis and Folder Analysis both use this store directly (like
+ * `filesystemStore`, it's a single active session, not a
+ * multi-instance cache) - only one scan runs from the UI at once, even
+ * though the backend itself could technically track several.
+ *
+ * Every async step is self-contained here, the same style as
+ * `filesystemStore`: components just call `start`/`cancel` and read
+ * state back, never touching `api/scan.ts` or Tauri events directly.
+ */
+import { create } from "zustand";
+import { cancelScan, generateScanId, getSubtree, startScan, subscribeScanEvents } from "@/api/scan";
+import { toAppError } from "@/api/backend";
+import type { AppError, ScanOptions, ScanProgress, ScanResult } from "@/models/backend";
+import type { FsNode } from "@/models/common";
+import { needsChildren } from "@/utils/fsTree";
+
+export type ScanStatus = "idle" | "scanning" | "completed" | "cancelled" | "error";
+
+interface ScanState {
+  status: ScanStatus;
+  scanId: string | null;
+  /** What the current (or last) scan is scanning - lets a page that
+   * remounts mid-scan (navigating away and back) show the real target
+   * instead of resetting its location field to the default. */
+  path: string | null;
+  progress: ScanProgress | null;
+  result: ScanResult | null;
+  error: AppError | null;
+
+  start: (path: string, options: ScanOptions) => Promise<void>;
+  cancel: () => Promise<void>;
+  reset: () => void;
+  /** Resolves to `node` with its `children` populated, fetching them
+   * from the backend's cached full tree first if they were truncated
+   * out of what the frontend received (see `needsChildren`). */
+  loadChildren: (node: FsNode) => Promise<FsNode>;
+}
+
+export const useScanStore = create<ScanState>((set, get) => {
+  // Not part of the reactive state on purpose - components never need
+  // to read it, and it must survive a `set()` re-render untouched.
+  let unlisten: (() => void) | null = null;
+
+  return {
+    status: "idle",
+    scanId: null,
+    path: null,
+    progress: null,
+    result: null,
+    error: null,
+
+    start: async (path, options) => {
+      unlisten?.();
+      unlisten = null;
+
+      const scanId = generateScanId();
+      set({
+        status: "scanning",
+        scanId,
+        path,
+        progress: null,
+        result: null,
+        error: null,
+      });
+
+      // Subscribed *before* the backend is told to start - see
+      // api/scan.ts's doc comment on why order matters here.
+      unlisten = await subscribeScanEvents(scanId, {
+        onProgress: (progress) => {
+          if (get().scanId === scanId) set({ progress });
+        },
+        onComplete: (result) => {
+          if (get().scanId === scanId) set({ status: "completed", result });
+        },
+        onCancelled: () => {
+          if (get().scanId === scanId) set({ status: "cancelled" });
+        },
+        onError: (error) => {
+          if (get().scanId === scanId) set({ status: "error", error });
+        },
+      });
+
+      try {
+        await startScan(scanId, path, options);
+      } catch (err) {
+        if (get().scanId === scanId) {
+          set({ status: "error", error: toAppError(err) });
+        }
+      }
+    },
+
+    cancel: async () => {
+      const { scanId, status } = get();
+      if (!scanId || status !== "scanning") return;
+      try {
+        await cancelScan(scanId);
+      } catch {
+        // The scan may have already finished server-side between the
+        // Cancel click and this call landing - the eventual
+        // scan-complete/scan-cancelled event is the source of truth,
+        // not this promise.
+      }
+    },
+
+    reset: () => {
+      unlisten?.();
+      unlisten = null;
+      set({ status: "idle", scanId: null, path: null, progress: null, result: null, error: null });
+    },
+
+    loadChildren: async (node) => {
+      const { scanId, status } = get();
+      if (!scanId || status !== "completed" || !needsChildren(node)) return node;
+      const loaded = await getSubtree(scanId, node.path);
+      // Deliberately grafted onto the existing node in place, not
+      // copied: the result tree is this session's cache, so navigating
+      // back to (or re-expanding) this folder never refetches, and
+      // every breadcrumb/selection reference to it sees the children.
+      // Callers still trigger a re-render themselves (a new breadcrumb
+      // entry or expanded-ids set) since React can't see the mutation.
+      node.children = loaded.children;
+      return node;
+    },
+  };
+});

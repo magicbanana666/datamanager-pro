@@ -2,7 +2,11 @@
 
 **Phase 1 — Complete** (UI-only, see [PHASE1.md](./PHASE1.md)).
 **Phase 2 — Complete** (real, read-only filesystem layer, see
-[PHASE2.md](./PHASE2.md)). The phases below are suggested milestones
+[PHASE2.md](./PHASE2.md)).
+**Phase 3 — Complete** (real recursive scanner, see
+[PHASE3.md](./PHASE3.md)).
+**Phase 4 — Complete** (real Treemap/charts/tables, see
+[PHASE4.md](./PHASE4.md)). The phases below are suggested milestones
 for turning the rest of the UI into a fully functional application.
 Each phase should keep the existing page/component structure intact
 and simply swap mock data sources for real ones behind the same
@@ -20,16 +24,31 @@ shallow folder/file metadata are also real. See
 (treemaps, charts, duplicates, etc.) remain mock data going into
 Phase 3.
 
-### Phase 3 — High-speed folder/disk scanner
-A multithreaded Rust scanning engine (MFT-based on NTFS where possible,
-falling back to `walkdir`) that walks a location and produces the
-`FsNode` tree shape the frontend already expects, streamed to the UI
-via Tauri events so the existing progress-bar patterns keep working.
+### ~~Phase 3 — High-speed folder/disk scanner~~ ✅ Complete
+A multithreaded Rust scanning engine (MFT-based on NTFS where
+possible via the `ntfs` crate, automatically falling back to a
+`rayon`-parallel directory walk) walks a location and produces the
+real `FsNode` tree shape the frontend already expects, streamed to the
+UI via Tauri events (`scan-progress`/`scan-complete`/`scan-cancelled`/
+`scan-error`) so the existing progress-bar patterns keep working. See
+[PHASE3.md](./PHASE3.md) for the full detail; the Treemap/charts/
+duplicate-finder layers still render Phase 1 mock data going into
+Phase 4 - Phase 3 only proves the engine end-to-end via a real
+Scan/Cancel/live-summary slice on Disk Analysis and Folder Analysis.
 
-### Phase 4 — Treemap & analysis engine using real data
-Wire Disk Analysis, Folder Analysis and Network Analysis's Treemap,
-charts, and tables to real scan results from Phase 3. Add persistence
-so a completed scan can be reopened without rescanning.
+### ~~Phase 4 — Treemap & analysis engine using real data~~ ✅ Complete
+Disk Analysis and Folder Analysis's Treemap, "Files & Folders" table,
+and every derivable analytical tab (Chart, File Types, Top Files, Top
+Folders, Timeline, Extensions) now render a real completed scan,
+re-scoping to whatever subfolder is drilled into. See
+[PHASE4.md](./PHASE4.md) for the full detail, including a genuine
+layout bug (a `Card` body's default flex sizing silently beating an
+explicit fixed height) this phase found and fixed across the whole
+app. Network Analysis stays mock (no real backend until Phase 8), as
+do Users/Owners (Disk Analysis) and Duplicates (Folder Analysis) -
+neither has real data to show yet. Persistence (reopening a completed
+scan without rescanning) was explicitly deferred as a fast-follow, not
+built this pass.
 
 ### Phase 5 — Search, comparison & duplicate engine
 Real file-name/content search (with regex, in-archive search),

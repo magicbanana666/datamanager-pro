@@ -7,6 +7,7 @@
 
 use crate::models::errors::AppError;
 use crate::models::filesystem::FileAttribute;
+use crate::models::scan::{FsNode, ScanOptions, ScanProgressState};
 use crate::models::storage::StorageVolume;
 use std::path::Path;
 
@@ -20,6 +21,30 @@ pub fn allocated_size_bytes(_path: &Path, _logical_size: u64) -> Option<u64> {
     None
 }
 
+pub fn allocated_size_for_scan(
+    _path: &Path,
+    _metadata: &std::fs::Metadata,
+    _cluster_size: Option<u64>,
+) -> Option<u64> {
+    None
+}
+
+pub fn cluster_size_bytes(_path: &Path) -> Option<u64> {
+    None
+}
+
 pub fn decode_attributes(_metadata: &std::fs::Metadata) -> Vec<FileAttribute> {
     Vec::new()
+}
+
+/// Raw MFT access is a Windows-only concept (see `platform::windows`'s
+/// `try_mft_scan`) - unconditionally unavailable here, so
+/// `services::scan_service::run_scan` always falls back to the
+/// (fully cross-platform) directory-walk engine.
+pub fn try_mft_scan(
+    _root_path: &str,
+    _options: ScanOptions,
+    _state: &ScanProgressState,
+) -> Result<FsNode, String> {
+    Err("MFT scanning is only implemented for Windows".to_string())
 }

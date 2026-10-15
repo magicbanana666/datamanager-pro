@@ -20,6 +20,7 @@ export function filterChildren(children: FsNode[], filter: QuickFilterId): FsNod
       return children.filter((c) => c.size >= LARGE_THRESHOLD);
     case "old":
       return children.filter((c) => {
+        if (c.lastModified === null) return false; // unknown date - don't guess "old"
         const days = (Date.now() - new Date(c.lastModified).getTime()) / (1000 * 60 * 60 * 24);
         return days >= OLD_THRESHOLD_DAYS;
       });

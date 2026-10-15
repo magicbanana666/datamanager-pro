@@ -11,6 +11,8 @@
  * describe.
  */
 
+import type { FsNode } from "@/models/common";
+
 // ---------------------------------------------------------------------------
 // Shared error shape (models::errors::AppError)
 // ---------------------------------------------------------------------------
@@ -175,6 +177,58 @@ export interface PathValidation {
   isUnc: boolean;
   accessible: boolean;
   error: AppError | null;
+}
+
+// ---------------------------------------------------------------------------
+// Recursive scanner (models::scan) - Phase 3
+// ---------------------------------------------------------------------------
+
+export interface ScanOptions {
+  showHidden: boolean;
+  showSystem: boolean;
+}
+
+export const DEFAULT_SCAN_OPTIONS: ScanOptions = {
+  showHidden: false,
+  showSystem: false,
+};
+
+/** Which engine actually produced a scan. Only ever known once a scan
+ * finishes - the MFT-vs-walk decision happens inside the scan itself,
+ * so it's never present on a `ScanProgress` tick, only `ScanResult`.
+ * `mft` needs admin/backup privilege to open a raw volume handle;
+ * without it, every scan silently and automatically falls back to
+ * `walk` - see PHASE3.md. */
+export type ScanEngine = "mft" | "walk";
+
+export interface ScanProgress {
+  scanId: string;
+  scannedFiles: number;
+  scannedFolders: number;
+  scannedBytes: number;
+  currentPath: string;
+  elapsedMs: number;
+}
+
+/** A subtree that was skipped rather than aborting the whole scan -
+ * e.g. an access-denied subfolder. */
+export interface ScanSkip {
+  path: string;
+  reason: string;
+}
+
+export interface ScanResult {
+  scanId: string;
+  /** The real, recursively-aggregated tree - the exact `FsNode` shape
+   * `src/models/common.ts` already defines and the Phase 1 mock trees
+   * already use, so it can be dropped in wherever those are without an
+   * adaptation layer. `category` always comes back `null` for now -
+   * categorizing by extension stays a frontend concern, wired up when
+   * Phase 4 connects the Treemap to real data. */
+  root: FsNode;
+  engine: ScanEngine;
+  elapsedMs: number;
+  skipped: ScanSkip[];
 }
 
 // ---------------------------------------------------------------------------

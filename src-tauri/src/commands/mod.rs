@@ -7,6 +7,7 @@
 //! scheduling and transfer engines are added.
 
 pub mod filesystem;
+pub mod scan;
 pub mod storage;
 pub mod system;
 

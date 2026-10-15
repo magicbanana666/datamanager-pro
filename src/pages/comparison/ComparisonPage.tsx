@@ -244,7 +244,10 @@ export function ComparisonPage() {
       <Card
         title="Detailed Comparison"
         padded={false}
-        bodyClassName="h-[280px]"
+        // flex-none: cancels Card's default flex-1 (flex-basis:0%), which
+        // otherwise beats this fixed height in a flex-col layout - see
+        // the identical fix/comment in DiskAnalysisPage.tsx (PHASE4.md).
+        bodyClassName="h-[280px] flex-none"
         action={
           <div className="flex items-center gap-2">
             <DemoBadge label="Demo Comparison" />
