@@ -771,7 +771,7 @@ pub fn execute(
     }
 
     let copies: Vec<&PlanItem> = items.iter().filter(|i| i.action.copies()).filter(pending).collect();
-    match rayon::ThreadPoolBuilder::new().num_threads(COPY_THREADS).build() {
+    match rayon::ThreadPoolBuilder::new().num_threads(COPY_THREADS).stack_size(16 * 1024 * 1024).build() {
         Ok(pool) => pool.install(|| {
             copies.par_iter().for_each(|item| {
                 if state.wait_while_paused() {

@@ -51,8 +51,28 @@ use commands::scheduler::{
 use commands::JobRegistry;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// Stack for every worker thread. The scan builds and walks folder trees
+/// recursively; on deep trees (the whole C: drive) the default 2 MB overflowed
+/// once the compiler inlined less (exception 0xc00000fd). Reserved, not
+/// committed: only pages actually used cost memory.
+const WORKER_STACK: usize = 64 * 1024 * 1024;
+
 pub fn run() {
     diagnostics::init();
+    // Rayon: parallel directory walks, hashing, copies.
+    if let Err(e) = rayon::ThreadPoolBuilder::new().stack_size(WORKER_STACK).build_global() {
+        tracing::warn!(error = %e, "could not size the rayon pool");
+    }
+    // Tokio (Tauri's async runtime): commands and their blocking work.
+    match tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .thread_stack_size(WORKER_STACK)
+        .build()
+    {
+        // Lives as long as the app.
+        Ok(runtime) => tauri::async_runtime::set(Box::leak(Box::new(runtime)).handle().clone()),
+        Err(e) => tracing::warn!(error = %e, "could not size the async runtime"),
+    }
     tracing::info!(
         version = env!("CARGO_PKG_VERSION"),
         "DataManager Pro starting"

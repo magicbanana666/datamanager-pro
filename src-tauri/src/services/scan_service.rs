@@ -52,7 +52,7 @@ pub fn run_scan(
             let root = match options
                 .threads
                 .filter(|n| *n > 0)
-                .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).build().ok())
+                .and_then(|n| rayon::ThreadPoolBuilder::new().num_threads(n).stack_size(64 * 1024 * 1024).build().ok())
             {
                 Some(pool) => pool.install(walk),
                 None => walk(),
