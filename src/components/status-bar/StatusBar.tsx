@@ -1,15 +1,18 @@
 import { useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useUiStore } from "@/state/uiStore";
 
 export function StatusBar() {
   const { statusText, memoryMb, setMemoryMb, appVersion } = useUiStore();
 
-  // Small ambient fluctuation so the memory figure feels alive, purely
-  // cosmetic - no real process telemetry is read anywhere in Phase 1.
+  // The backend process's real memory use (working set), every 3 s.
   useEffect(() => {
-    const id = window.setInterval(() => {
-      setMemoryMb(Math.round(260 + Math.sin(Date.now() / 9000) * 30 + Math.random() * 12));
-    }, 3000);
+    const read = () =>
+      invoke<number>("get_process_memory")
+        .then((bytes) => setMemoryMb(Math.round(bytes / (1024 * 1024))))
+        .catch(() => {});
+    read();
+    const id = window.setInterval(read, 3000);
     return () => window.clearInterval(id);
   }, [setMemoryMb]);
 
@@ -20,7 +23,7 @@ export function StatusBar() {
         <span>{statusText}</span>
       </div>
       <div className="flex items-center gap-3">
-        <span>Memory: {memoryMb} MB</span>
+        <span>Memory: {memoryMb ? `${memoryMb} MB` : "-"}</span>
         <span className="text-fg-subtle">v{appVersion}</span>
       </div>
     </footer>

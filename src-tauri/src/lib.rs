@@ -35,7 +35,7 @@ use commands::scan::{
 };
 use commands::search::{cancel_file_search, get_text_preview, open_path, start_file_search};
 use commands::storage::list_storage_volumes;
-use commands::system::{get_app_version, get_system_info, ping_backend};
+use commands::system::{get_app_version, get_process_memory, get_system_info, ping_backend};
 use commands::transfer::{
     cancel_shutdown, cancel_transfer, discard_interrupted_transfer, execute_transfer,
     list_interrupted_transfers, open_folder, resume_interrupted_transfer, schedule_shutdown,
@@ -133,6 +133,22 @@ pub fn run() {
             diagnostics::dismiss_crash_reports,
             diagnostics::log_frontend_error,
             diagnostics::logs_folder,
+            diagnostics::set_log_level,
+            get_process_memory,
+            commands::tools::launch_system_tool,
+            commands::tools::file_digests,
+            commands::tools::split_file,
+            commands::tools::merge_file_parts,
+            commands::tools::zip_files,
+            commands::tools::unzip_archive,
+            commands::tools::shred_files,
+            commands::tools::ping_host,
+            commands::tools::dns_lookup,
+            commands::tools::wake_on_lan,
+            commands::tools::disk_health,
+            commands::tools::run_script,
+            commands::tools::read_latest_log,
+            commands::tools::data_folder,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

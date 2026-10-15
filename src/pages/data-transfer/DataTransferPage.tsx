@@ -28,6 +28,7 @@ import {
 import { formatBytes, formatDuration, formatNumber, formatSpeed } from "@/utils/format";
 import { cancelScheduledShutdown, useTransferStore } from "@/state/transferStore";
 import { toast } from "@/state/toastStore";
+import { useSettingsStore } from "@/state/settingsStore";
 
 const TABS = [
   { id: "file-list", label: "File List" },
@@ -56,8 +57,20 @@ export function DataTransferPage() {
   const [source, setSource] = useState(() => useTransferStore.getState().request?.source ?? "");
   const [destination, setDestination] = useState(() => useTransferStore.getState().request?.destination ?? "");
   const [mode, setMode] = useState<TransferMode>(() => fromBackend(useTransferStore.getState().request?.mode));
-  const [collision, setCollision] = useState<CollisionPolicy>(() => useTransferStore.getState().request?.collision ?? "skip-same");
-  const [options, setOptions] = useState(() => useTransferStore.getState().request?.options ?? { ...DEFAULT_TRANSFER_OPTIONS, verifyAfterTransfer: true });
+  // A new transfer starts from Settings > File Operations.
+  const [collision, setCollision] = useState<CollisionPolicy>(
+    () => useTransferStore.getState().request?.collision ?? useSettingsStore.getState().settings.fileOperations.defaultCollisionBehavior,
+  );
+  const [options, setOptions] = useState(() => {
+    const ops = useSettingsStore.getState().settings.fileOperations;
+    return (
+      useTransferStore.getState().request?.options ?? {
+        ...DEFAULT_TRANSFER_OPTIONS,
+        verifyAfterTransfer: ops.verifyAfterCopy,
+        preserveTimestamps: ops.preserveTimestamps,
+      }
+    );
+  });
   const [tab, setTab] = useState("progress");
   const [shutdownPending, setShutdownPending] = useState(false);
 

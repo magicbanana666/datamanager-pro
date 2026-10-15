@@ -151,6 +151,7 @@ fn collect_candidates(
     let scan_options = ScanOptions {
         show_hidden: options.include_hidden,
         show_system: options.include_system,
+        threads: None,
     };
     let (tree, _engine) = scan_service::run_scan(location, scan_options, &state.scan);
     let modified_after = options

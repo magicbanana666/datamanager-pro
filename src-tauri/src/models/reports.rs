@@ -80,6 +80,10 @@ pub struct ReportRequest {
     pub template: ReportTemplate,
     pub include_charts: bool,
     pub description: String,
+    /// Settings > Reports > Default output folder; empty uses the standard
+    /// reports folder.
+    #[serde(default)]
+    pub output_dir: Option<String>,
 }
 
 /// One generated report, as listed under Recent Reports.

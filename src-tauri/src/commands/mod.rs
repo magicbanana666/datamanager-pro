@@ -13,6 +13,7 @@ pub mod scan;
 pub mod search;
 pub mod storage;
 pub mod system;
+pub mod tools;
 
 pub mod network;
 pub mod reports;

@@ -96,6 +96,7 @@ fn collect_files(
     let scan_options = ScanOptions {
         show_hidden: !options.ignore_hidden,
         show_system: !options.ignore_system,
+        threads: None,
     };
     let min_size = options.min_size.max(1);
     let max_size = options.max_size.unwrap_or(u64::MAX);

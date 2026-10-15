@@ -57,26 +57,47 @@ fn prune_logs(dir: &Path, keep: usize) {
 }
 
 /// Sets up logging to stdout and a log file, and the panic hook.
+type FilterHandle = tracing_subscriber::reload::Handle<tracing_subscriber::EnvFilter, tracing_subscriber::Registry>;
+
+/// Lets Settings > Advanced > Log level change the filter at runtime.
+static FILTER: std::sync::OnceLock<FilterHandle> = std::sync::OnceLock::new();
+
+const LOG_LEVELS: [&str; 5] = ["error", "warn", "info", "debug", "trace"];
+
+fn level_file() -> Option<PathBuf> {
+    early_data_dir().map(|d| d.join("log-level.txt"))
+}
+
+/// `RUST_LOG` wins; otherwise the level saved from Settings, else info.
+fn initial_filter() -> tracing_subscriber::EnvFilter {
+    if let Ok(filter) = tracing_subscriber::EnvFilter::try_from_default_env() {
+        return filter;
+    }
+    let saved = level_file()
+        .and_then(|p| fs::read_to_string(p).ok())
+        .map(|s| s.trim().to_string())
+        .filter(|s| LOG_LEVELS.contains(&s.as_str()));
+    tracing_subscriber::EnvFilter::new(saved.as_deref().unwrap_or("info"))
+}
+
 pub fn init() {
-    let filter = || tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| "info".into());
     let file = logs_dir().and_then(|dir| {
         fs::create_dir_all(&dir).ok()?;
         prune_logs(&dir, KEEP_LOGS - 1);
         fs::File::create(dir.join(format!("datamanager-{}.log", stamp()))).ok()
     });
-    let console = tracing_subscriber::fmt::layer().with_filter(filter());
-    match file {
-        Some(file) => tracing_subscriber::registry()
-            .with(console)
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .with_ansi(false)
-                    .with_writer(Mutex::new(file))
-                    .with_filter(filter()),
-            )
-            .init(),
-        None => tracing_subscriber::registry().with(console).init(),
-    }
+    let (filter, handle) = tracing_subscriber::reload::Layer::new(initial_filter());
+    let _ = FILTER.set(handle);
+    let file_layer = file.map(|file| {
+        tracing_subscriber::fmt::layer()
+            .with_ansi(false)
+            .with_writer(Mutex::new(file))
+    });
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(tracing_subscriber::fmt::layer())
+        .with(file_layer)
+        .init();
 
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
@@ -160,6 +181,24 @@ pub fn log_frontend_error(message: String, stack: Option<String>) {
     let message: String = message.chars().take(2_000).collect();
     let stack: String = stack.unwrap_or_default().chars().take(8_000).collect();
     tracing::error!(%message, %stack, "frontend error");
+}
+
+/// Applies a log level now and keeps it for the next start.
+#[tauri::command]
+pub fn set_log_level(level: String) -> Result<(), AppError> {
+    if !LOG_LEVELS.contains(&level.as_str()) {
+        return Err(AppError::new(AppErrorCode::InvalidInput, "Unknown log level."));
+    }
+    if let Some(handle) = FILTER.get() {
+        handle
+            .reload(tracing_subscriber::EnvFilter::new(&level))
+            .map_err(|e| AppError::new(AppErrorCode::Unknown, e.to_string()))?;
+    }
+    if let Some(path) = level_file() {
+        let _ = fs::write(path, &level);
+    }
+    tracing::info!(level = %level, "log level changed");
+    Ok(())
 }
 
 #[tauri::command]

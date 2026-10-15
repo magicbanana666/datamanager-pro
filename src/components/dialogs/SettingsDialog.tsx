@@ -10,13 +10,14 @@ import { useUiStore } from "@/state/uiStore";
 import { useSettingsStore } from "@/state/settingsStore";
 import { toast } from "@/state/toastStore";
 import { useUpdateStore } from "@/state/updateStore";
+import { pickFolder } from "@/api/dialog";
+import { setLogLevel } from "@/api/diagnostics";
 
 const SECTIONS = [
   { id: "general", label: "General" },
   { id: "appearance", label: "Appearance" },
   { id: "scanning", label: "Scanning" },
   { id: "file-operations", label: "File Operations" },
-  { id: "network", label: "Network" },
   { id: "reports", label: "Reports" },
   { id: "advanced", label: "Advanced" },
 ];
@@ -101,7 +102,7 @@ export function SettingsDialog() {
 
         {section === "appearance" && (
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Theme" hint="Dark mode only in Phase 1.">
+            <Field label="Theme" hint="Only the dark theme exists for now.">
               <Select value="dark" disabled options={[{ value: "dark", label: "Dark (selected)" }]} />
             </Field>
             <Field label="Density">
@@ -133,26 +134,22 @@ export function SettingsDialog() {
 
         {section === "scanning" && (
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Default thread count">
+            <Field label="Threads for the directory walk" hint="0 = every CPU core. The MFT engine (whole NTFS drives, as administrator) reads the drive in one pass.">
               <TextInput
                 type="number"
-                min={1}
+                min={0}
                 max={64}
                 value={settings.scanning.defaultThreadCount}
-                onChange={(e) => updateSection("scanning", { defaultThreadCount: Number(e.target.value) })}
+                onChange={(e) => updateSection("scanning", { defaultThreadCount: Math.max(0, Math.min(64, Number(e.target.value) || 0)) })}
               />
             </Field>
             <div className="flex flex-col gap-3 pt-5">
               <Toggle
-                checked={settings.scanning.followJunctions}
-                onChange={(v) => updateSection("scanning", { followJunctions: v })}
-                label="Follow junctions / symlinks"
-              />
-              <Toggle
                 checked={settings.scanning.includeHiddenFiles}
                 onChange={(v) => updateSection("scanning", { includeHiddenFiles: v })}
-                label="Include hidden files"
+                label="Include hidden and system files"
               />
+              <span className="text-[11px] text-fg-subtle">Junctions and symbolic links are never followed, so nothing is counted twice.</span>
             </div>
           </div>
         )}
@@ -190,34 +187,6 @@ export function SettingsDialog() {
           </div>
         )}
 
-        {section === "network" && (
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Timeout (seconds)">
-              <TextInput
-                type="number"
-                min={1}
-                max={120}
-                value={settings.network.timeoutSeconds}
-                onChange={(e) => updateSection("network", { timeoutSeconds: Number(e.target.value) })}
-              />
-            </Field>
-            <Field label="Concurrency">
-              <TextInput
-                type="number"
-                min={1}
-                max={256}
-                value={settings.network.concurrency}
-                onChange={(e) => updateSection("network", { concurrency: Number(e.target.value) })}
-              />
-            </Field>
-            <Toggle
-              checked={settings.network.resolveHostnames}
-              onChange={(v) => updateSection("network", { resolveHostnames: v })}
-              label="Resolve hostnames"
-            />
-          </div>
-        )}
-
         {section === "reports" && (
           <div className="grid grid-cols-2 gap-4">
             <Field label="Default format">
@@ -232,21 +201,29 @@ export function SettingsDialog() {
                 ]}
               />
             </Field>
-            <Field label="Default output folder">
-              <TextInput
-                value={settings.reports.defaultOutputFolder}
-                onChange={(e) => updateSection("reports", { defaultOutputFolder: e.target.value })}
-              />
+            <Field label="Default output folder" hint="Empty = Documents\DataManager Pro Reports.">
+              <div className="flex gap-2">
+                <TextInput
+                  value={settings.reports.defaultOutputFolder}
+                  onChange={(e) => updateSection("reports", { defaultOutputFolder: e.target.value })}
+                  containerClassName="flex-1"
+                />
+                <Button onClick={() => pickFolder().then((p) => p && updateSection("reports", { defaultOutputFolder: p }))}>Browse...</Button>
+              </div>
             </Field>
           </div>
         )}
 
         {section === "advanced" && (
           <div className="grid grid-cols-2 gap-4">
-            <Field label="Log level">
+            <Field label="Log level" hint="Applies immediately and is kept for the next start.">
               <Select
                 value={settings.advanced.logLevel}
-                onChange={(e) => updateSection("advanced", { logLevel: e.target.value as typeof settings.advanced.logLevel })}
+                onChange={(e) => {
+                  const logLevel = e.target.value as typeof settings.advanced.logLevel;
+                  updateSection("advanced", { logLevel });
+                  setLogLevel(logLevel).catch(() => toast.danger("Changing the log level failed."));
+                }}
                 options={[
                   { value: "error", label: "Error" },
                   { value: "warn", label: "Warn" },
@@ -256,13 +233,6 @@ export function SettingsDialog() {
                 ]}
               />
             </Field>
-            <div className="pt-5">
-              <Toggle
-                checked={settings.advanced.developerMode}
-                onChange={(v) => updateSection("advanced", { developerMode: v })}
-                label="Developer mode"
-              />
-            </div>
           </div>
         )}
       </div>

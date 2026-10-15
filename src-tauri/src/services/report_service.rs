@@ -390,6 +390,7 @@ mod tests {
             template: ReportTemplate::Professional,
             include_charts: true,
             description: String::new(),
+            output_dir: None,
         }
     }
 

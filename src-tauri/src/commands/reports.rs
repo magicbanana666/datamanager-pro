@@ -33,7 +33,10 @@ fn write_index(path: &Path, records: &[ReportRecord]) -> Result<(), AppError> {
 
 #[tauri::command]
 pub async fn generate_report(app: AppHandle, request: ReportRequest) -> Result<ReportRecord, AppError> {
-    let dir = reports_dir(&app)?;
+    let dir = match request.output_dir.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        Some(custom) => std::path::PathBuf::from(custom),
+        None => reports_dir(&app)?,
+    };
     let index = index_path(&app)?;
     blocking(move || {
         std::fs::create_dir_all(&dir)

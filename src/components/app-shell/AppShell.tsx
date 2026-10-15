@@ -15,11 +15,16 @@ import { startActivityTracking } from "@/state/activityStore";
 
 export function AppShell() {
   const density = useSettingsStore((s) => s.settings.appearance.density);
+  const accent = useSettingsStore((s) => s.settings.appearance.accent);
   const location = useLocation();
 
   useEffect(() => {
     document.documentElement.setAttribute("data-density", density);
   }, [density]);
+
+  useEffect(() => {
+    document.documentElement.setAttribute("data-accent", accent);
+  }, [accent]);
 
   // The scheduler runs in the backend whatever page is open; subscribing
   // here makes its finished runs toast everywhere.

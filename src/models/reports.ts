@@ -35,6 +35,8 @@ export interface ReportRequest {
   template: ReportTemplate;
   includeCharts: boolean;
   description: string;
+  /** Empty or null: the standard reports folder. */
+  outputDir?: string | null;
 }
 
 export interface ReportRecord {

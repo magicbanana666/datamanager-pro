@@ -21,7 +21,7 @@ import { EMPTY_SCAN_ROOT, flattenVisible, hasExpandableChildren } from "@/utils/
 import { topChildrenWithOthers } from "@/utils/scanAnalysis";
 import { useScanAnalysis } from "@/hooks/useScanAnalysis";
 import type { FsNode } from "@/models/common";
-import { DEFAULT_SCAN_OPTIONS } from "@/models/backend";
+import { scanOptionsFromSettings } from "@/state/settingsStore";
 import { formatBytes, formatDate, formatNumber, formatPercent } from "@/utils/format";
 import { useScanNotifications } from "@/hooks/useScanNotifications";
 import { useFilesystemStore } from "@/state/filesystemStore";
@@ -174,7 +174,7 @@ export function FolderAnalysisPage() {
 
   function startScan() {
     setStatusText(`Scanning ${location}...`);
-    void realScan.start(location, DEFAULT_SCAN_OPTIONS);
+    void realScan.start(location, scanOptionsFromSettings());
     void browse(location);
   }
 

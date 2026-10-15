@@ -25,6 +25,7 @@ import { useSyncStore, useTransferStore } from "@/state/transferStore";
 import { REPORT_KINDS, buildReport, reportSource, type ReportKind } from "@/utils/reportBuilder";
 import { formatBytes, formatDate, formatNumber } from "@/utils/format";
 import { toast } from "@/state/toastStore";
+import { useSettingsStore } from "@/state/settingsStore";
 import type { FsNode } from "@/models/common";
 
 const TABS = [
@@ -63,7 +64,8 @@ const fail = (err: unknown) => toast.danger(err instanceof Error ? err.message :
 export function ReportsPage() {
   const [tab, setTab] = useState("overview");
   const [kind, setKind] = useState<ReportKind>("disk");
-  const [format, setFormat] = useState<ReportFormat>("PDF");
+  const [format, setFormat] = useState<ReportFormat>(() => useSettingsStore.getState().settings.reports.defaultFormat);
+  const outputDir = useSettingsStore((s) => s.settings.reports.defaultOutputFolder);
   const [template, setTemplate] = useState<ReportTemplate>("professional");
   const [notes, setNotes] = useState("");
   const [include, setInclude] = useState({
@@ -137,6 +139,7 @@ export function ReportsPage() {
       template,
       includeCharts: include.charts,
       description: include.notes && notes.trim() ? notes.trim() : document.source,
+      outputDir: outputDir.trim() || null,
     };
   }
 
@@ -366,7 +369,9 @@ export function ReportsPage() {
               ]}
             />
           </div>
-          <p className="text-[11.5px] text-fg-muted">XLSX and CSV always contain every row. Reports are saved in Documents\DataManager Pro Reports.</p>
+          <p className="text-[11.5px] text-fg-muted">
+            XLSX and CSV always contain every row. Reports are saved in {outputDir.trim() || "Documents\\DataManager Pro Reports"} (Settings → Reports).
+          </p>
           <div className="mt-auto flex gap-2 pt-2">
             <Button icon={busy === "preview" ? Loader2 : Eye} disabled={!source || !!busy} onClick={() => void runPreview()}>
               Preview

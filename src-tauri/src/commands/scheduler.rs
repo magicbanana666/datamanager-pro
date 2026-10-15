@@ -216,7 +216,7 @@ async fn execute_task(app: AppHandle, task: ScheduledTask, job_id: String) {
             let source = task.source.clone();
             let scan = tokio::task::spawn_blocking(move || {
                 let state = ScanProgressState::new();
-                let options = ScanOptions { show_hidden: true, show_system: true };
+                let options = ScanOptions { show_hidden: true, show_system: true, threads: None };
                 let (root, engine) = scan_service::run_scan(&source, options, &state);
                 (root, engine, state.take_skipped().len())
             })

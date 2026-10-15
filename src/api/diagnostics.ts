@@ -34,3 +34,7 @@ export function installGlobalErrorLogging(): void {
     else logFrontendError(typeof reason === "string" ? reason : JSON.stringify(reason));
   });
 }
+
+export function setLogLevel(level: string): Promise<void> {
+  return invoke("set_log_level", { level });
+}

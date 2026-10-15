@@ -21,7 +21,8 @@ import { toAppError } from "@/api/backend";
 import { flattenVisible, hasExpandableChildren } from "@/utils/fsTree";
 import { useScanAnalysis } from "@/hooks/useScanAnalysis";
 import type { FsNode } from "@/models/common";
-import { DEFAULT_SCAN_OPTIONS, type AppError } from "@/models/backend";
+import type { AppError } from "@/models/backend";
+import { scanOptionsFromSettings } from "@/state/settingsStore";
 import type { AccessRightEntry, NetworkSession, NetworkShare, ReadSpeedResult, ShareConnection } from "@/models/network";
 import { formatBytes, formatDate, formatDuration, formatNumber, formatPercent } from "@/utils/format";
 import { useNetworkScanStore } from "@/state/scanStore";
@@ -157,7 +158,7 @@ export function NetworkAnalysisPage() {
     }
     setStatusText(`Scanning ${location}...`);
     setSpeed({ running: false, result: null });
-    void scan.start(location, DEFAULT_SCAN_OPTIONS);
+    void scan.start(location, scanOptionsFromSettings());
   }
 
   function runSpeedTest() {

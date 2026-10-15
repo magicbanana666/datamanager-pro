@@ -16,5 +16,6 @@ pub mod scheduler_service;
 pub mod search_service;
 pub mod storage_service;
 pub mod sync_state;
+pub mod tools_service;
 pub mod transfer_journal;
 pub mod transfer_service;

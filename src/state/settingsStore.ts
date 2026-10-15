@@ -37,3 +37,13 @@ export const useSettingsStore = create<SettingsState>()(
     },
   ),
 );
+
+/** Scan options from Settings > Scanning. */
+export function scanOptionsFromSettings(): import("@/models/backend").ScanOptions {
+  const s = useSettingsStore.getState().settings.scanning;
+  return {
+    showHidden: s.includeHiddenFiles,
+    showSystem: s.includeHiddenFiles,
+    threads: s.defaultThreadCount > 0 ? s.defaultThreadCount : null,
+  };
+}

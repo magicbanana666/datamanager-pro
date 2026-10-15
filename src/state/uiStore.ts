@@ -43,7 +43,7 @@ export const useUiStore = create<UiState>((set) => ({
 
   statusText: "Ready",
   setStatusText: (statusText) => set({ statusText }),
-  memoryMb: 256,
+  memoryMb: 0,
   setMemoryMb: (memoryMb) => set({ memoryMb }),
   appVersion: "0.1.0",
 }));
