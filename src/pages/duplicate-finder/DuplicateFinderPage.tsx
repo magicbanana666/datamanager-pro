@@ -225,7 +225,8 @@ export function DuplicateFinderPage() {
   async function moveSelected() {
     const paths = checkSelection();
     if (!paths) return;
-    const destination = await pickFolder();
+    // Start the picker where the clicked (or first selected) file lives.
+    const destination = await pickFolder(focusedFile?.path ?? selectedFiles[0]?.path);
     if (!destination) return;
     await fileAction.start({
       source: "Duplicate Finder selection",

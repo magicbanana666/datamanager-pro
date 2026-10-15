@@ -161,7 +161,8 @@ export function ComparisonPage() {
   async function transferSelected(mode: "copy" | "move") {
     const file = selectedFile();
     if (!file) return;
-    const destination = await pickFolder();
+    // Start the picker in the file's own folder.
+    const destination = await pickFolder(file[1]);
     if (!destination) return;
     void fileAction.start({
       source: file[1],
